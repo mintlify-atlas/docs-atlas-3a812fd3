@@ -1,0 +1,592 @@
+---
+title: Installation
+description: Detailed installation instructions for copyparty on all supported platforms and environments
+---
+
+## Installation methods
+
+copyparty can be installed in multiple ways depending on your platform and preferences.
+
+## Self-extracting archive (recommended)
+
+The SFX is the recommended installation method for most users:
+
+<Steps>
+  <Step title="Download copyparty-sfx.py">
+    ```bash
+    curl -LO https://github.com/9001/copyparty/releases/latest/download/copyparty-sfx.py
+    chmod +x copyparty-sfx.py
+    ```
+    
+    <Tabs>
+      <Tab title="Full version">
+        **copyparty-sfx.py** - Complete with all languages
+        
+        ```bash
+        https://github.com/9001/copyparty/releases/latest/download/copyparty-sfx.py
+        ```
+      </Tab>
+      
+      <Tab title="English-only">
+        **copyparty-en.py** - Smaller, English-only version
+        
+        ```bash
+        https://github.com/9001/copyparty/releases/latest/download/copyparty-en.py
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+  
+  <Step title="Run copyparty">
+    ```bash
+    ./copyparty-sfx.py
+    ```
+    
+    Or with Python explicitly:
+    
+    ```bash
+    python3 copyparty-sfx.py
+    ```
+  </Step>
+</Steps>
+
+<Note>
+The SFX is a self-extractor that unpacks an embedded tar.gz into `$TEMP`. It's plaintext Python, so you can inspect the code before running.
+</Note>
+
+### Official mirrors
+
+If GitHub is unavailable, download from the official mirror:
+
+- https://copyparty.eu/py (full SFX)
+- https://copyparty.eu/en (English-only SFX)
+- https://copyparty.eu/pyz (zipapp)
+- https://copyparty.eu/enz (English-only zipapp)
+
+## PyPI installation
+
+Install from Python Package Index:
+
+```bash
+python3 -m pip install --user -U copyparty
+```
+
+Then run with:
+
+```bash
+copyparty
+```
+
+<Accordion title="Why use PyPI over SFX?">
+  - Integrates with Python package managers
+  - Easier updates with `pip install -U copyparty`
+  - Better for automated deployments
+  - Available as a `copyparty` command system-wide
+</Accordion>
+
+## Windows executable
+
+No Python? Use the standalone Windows executable:
+
+<Tabs>
+  <Tab title="Windows 8+">
+    Download [copyparty.exe](https://github.com/9001/copyparty/releases/latest/download/copyparty.exe)
+    
+    Includes Pillow built-in. Only needs FFmpeg for video thumbnails and media tags.
+  </Tab>
+  
+  <Tab title="Windows 7">
+    Download [copyparty32.exe](https://github.com/9001/copyparty/releases/latest/download/copyparty32.exe)
+    
+    32-bit version for Windows 7 compatibility.
+  </Tab>
+</Tabs>
+
+Double-click the `.exe` to run, or use from command line:
+
+```powershell
+.\copyparty.exe --help
+```
+
+<Warning>
+Do **not** install Python using `winget` or Microsoft Store - it breaks $PATH. Download from [python.org](https://www.python.org/downloads/windows/) instead.
+</Warning>
+
+## Zipapp (emergency alternative)
+
+If the SFX doesn't work, use the zipapp:
+
+```bash
+curl -LO https://github.com/9001/copyparty/releases/latest/download/copyparty.pyz
+python3 copyparty.pyz
+```
+
+<Note>
+The zipapp has slightly worse performance than the SFX but works on systems where the SFX might have issues.
+</Note>
+
+## Package managers
+
+### Arch Linux
+
+copyparty is in the official Arch repositories:
+
+```bash
+pacman -S copyparty
+```
+
+Then run with:
+
+```bash
+systemctl enable --now copyparty
+```
+
+### Homebrew (macOS / Linux)
+
+```bash
+brew install copyparty ffmpeg
+```
+
+Run with:
+
+```bash
+copyparty
+```
+
+### Nix / NixOS
+
+<Tabs>
+  <Tab title="Nix package">
+    ```bash
+    nix profile install github:9001/copyparty
+    ```
+  </Tab>
+  
+  <Tab title="NixOS module">
+    Add to your `configuration.nix`:
+    
+    ```nix
+    { config, pkgs, ... }:
+    {
+      services.copyparty = {
+        enable = true;
+        package = pkgs.copyparty;
+        # Additional configuration here
+      };
+    }
+    ```
+    
+    See the [NixOS module documentation](https://github.com/9001/copyparty#nixos-module) for details.
+  </Tab>
+</Tabs>
+
+### uv (fast Python package runner)
+
+If you have [uv](https://docs.astral.sh/uv/) installed:
+
+```bash
+uv tool run copyparty
+```
+
+No installation required - downloads and runs copyparty automatically.
+
+### Fedora
+
+<Warning>
+Fedora package does not exist yet. Use PyPI or SFX installation.
+</Warning>
+
+## Docker
+
+copyparty is available as Docker images:
+
+<CodeGroup>
+```bash Full image (with all dependencies)
+docker run -it --rm \
+  -p 3923:3923 \
+  -v /path/to/data:/data \
+  copyparty/ac
+```
+
+```bash Minimal image (no thumbnails)
+docker run -it --rm \
+  -p 3923:3923 \
+  -v /path/to/data:/data \
+  copyparty/min
+```
+
+```bash With configuration file
+docker run -it --rm \
+  -p 3923:3923 \
+  -v /path/to/data:/data \
+  -v /path/to/config.conf:/cfg/config.conf \
+  copyparty/ac -c /cfg/config.conf
+```
+</CodeGroup>
+
+Available image variants:
+
+- `copyparty/ac` - Full image with FFmpeg, Pillow, and all dependencies
+- `copyparty/min` - Minimal image (just copyparty, no thumbnails)
+- `copyparty/iv` - With libvips for faster thumbnails
+- `copyparty/dj` - Debian-based variants
+
+<Note>
+Docker images cannot generate thumbnails for HEIF/HEIC images and H.265/HEVC video due to [legal reasons](https://github.com/9001/copyparty/blob/hovudstraum/docs/bad-codecs.md).
+</Note>
+
+See the [Docker documentation](https://github.com/9001/copyparty/tree/hovudstraum/scripts/docker) for more details.
+
+## Mobile platforms
+
+### Android (Termux)
+
+<Steps>
+  <Step title="Install Termux">
+    Download Termux from [F-Droid](https://f-droid.org/packages/com.termux/) (not Google Play - that version is outdated).
+  </Step>
+  
+  <Step title="Install Python">
+    ```bash
+    pkg install python
+    ```
+  </Step>
+  
+  <Step title="Install copyparty">
+    ```bash
+    pip install copyparty
+    ```
+  </Step>
+  
+  <Step title="Run copyparty">
+    ```bash
+    copyparty
+    ```
+    
+    Access at http://127.0.0.1:3923
+  </Step>
+</Steps>
+
+<Accordion title="Enable optional features on Android">
+  ```bash
+  pkg install python pillow ffmpeg
+  pip install copyparty pillow mutagen
+  ```
+</Accordion>
+
+### iOS (a-Shell)
+
+<Steps>
+  <Step title="Install a-Shell">
+    Download [a-Shell](https://apps.apple.com/us/app/a-shell/id1473805438) from the App Store.
+  </Step>
+  
+  <Step title="Install copyparty">
+    ```bash
+    pip install copyparty
+    ```
+  </Step>
+  
+  <Step title="Run copyparty">
+    ```bash
+    copyparty
+    ```
+  </Step>
+</Steps>
+
+## System service integration
+
+For running copyparty as a system service:
+
+<Tabs>
+  <Tab title="systemd (Linux)">
+    Use the provided service file:
+    
+    ```bash
+    # Download the service file
+    curl -LO https://raw.githubusercontent.com/9001/copyparty/hovudstraum/contrib/systemd/copyparty.service
+    
+    # Edit to set your configuration
+    nano copyparty.service
+    
+    # Install
+    sudo cp copyparty.service /etc/systemd/system/
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now copyparty
+    ```
+    
+    See [contrib/systemd/copyparty.service](https://github.com/9001/copyparty/blob/hovudstraum/contrib/systemd/copyparty.service) for the template.
+  </Tab>
+  
+  <Tab title="Podman + systemd">
+    See [contrib/podman-systemd/](https://github.com/9001/copyparty/tree/hovudstraum/contrib/podman-systemd) for a complete guide on running copyparty in Podman as a systemd service.
+  </Tab>
+  
+  <Tab title="OpenRC (Alpine / Gentoo)">
+    Use [contrib/openrc/copyparty](https://github.com/9001/copyparty/blob/hovudstraum/contrib/openrc/copyparty):
+    
+    ```bash
+    # Download the init script
+    sudo curl -o /etc/init.d/copyparty https://raw.githubusercontent.com/9001/copyparty/hovudstraum/contrib/openrc/copyparty
+    sudo chmod +x /etc/init.d/copyparty
+    
+    # Enable and start
+    sudo rc-update add copyparty
+    sudo rc-service copyparty start
+    ```
+  </Tab>
+  
+  <Tab title="FreeBSD rc">
+    Use [contrib/rc/copyparty](https://github.com/9001/copyparty/blob/hovudstraum/contrib/rc/copyparty):
+    
+    ```bash
+    # Download the rc script
+    sudo fetch -o /usr/local/etc/rc.d/copyparty https://raw.githubusercontent.com/9001/copyparty/hovudstraum/contrib/rc/copyparty
+    sudo chmod +x /usr/local/etc/rc.d/copyparty
+    
+    # Enable in rc.conf
+    sudo sysrc copyparty_enable="YES"
+    
+    # Start the service
+    sudo service copyparty start
+    ```
+  </Tab>
+</Tabs>
+
+## Sandboxing and security
+
+For extra security, run copyparty in a sandbox:
+
+<Tabs>
+  <Tab title="prisonparty (chroot)">
+    Create a minimal chroot environment:
+    
+    ```bash
+    curl -LO https://raw.githubusercontent.com/9001/copyparty/hovudstraum/bin/prisonparty.sh
+    chmod +x prisonparty.sh
+    ./prisonparty.sh
+    ```
+    
+    Very portable and lightweight.
+  </Tab>
+  
+  <Tab title="bubbleparty (bubblewrap)">
+    Use bubblewrap for better isolation:
+    
+    ```bash
+    # Install bubblewrap first
+    # Debian/Ubuntu: apt install bubblewrap
+    # Arch: pacman -S bubblewrap
+    
+    curl -LO https://raw.githubusercontent.com/9001/copyparty/hovudstraum/bin/bubbleparty.sh
+    chmod +x bubbleparty.sh
+    ./bubbleparty.sh
+    ```
+    
+    Much better isolation than chroot.
+  </Tab>
+</Tabs>
+
+## Special environments
+
+### Synology NAS / DSM
+
+See the [Synology DSM guide](https://github.com/9001/copyparty/blob/hovudstraum/docs/synology-dsm.md) for detailed instructions.
+
+### Bootable USB / CD-ROM
+
+Not kidding - there's a bootable edition:
+
+- [Enterprise Edition bootable image](https://a.ocv.me/pub/stuff/edcd001/enterprise-edition/)
+
+Boot from USB or CD and run copyparty without any OS installation.
+
+### RHEL 8 / Rocky Linux 8
+
+You can run copyparty using the platform Python:
+
+```bash
+/usr/libexec/platform-python copyparty-sfx.py
+```
+
+## Installing optional dependencies
+
+Enhance copyparty with optional features:
+
+<AccordionGroup>
+  <Accordion title="Thumbnails (Pillow)">
+    ```bash
+    # Debian/Ubuntu
+    apt install python3-pil
+    
+    # Alpine
+    apk add py3-pillow
+    
+    # Fedora
+    dnf install python3-pillow
+    
+    # PyPI
+    pip install Pillow
+    ```
+    
+    Enables image thumbnails and faster image processing.
+  </Accordion>
+  
+  <Accordion title="Faster thumbnails (pyvips)">
+    ```bash
+    # Debian/Ubuntu
+    apt install python3-pyvips
+    
+    # macOS
+    brew install vips
+    pip install pyvips
+    
+    # PyPI
+    pip install pyvips
+    ```
+    
+    3x faster than Pillow for thumbnails. Required for HEIF/HEIC on some systems.
+  </Accordion>
+  
+  <Accordion title="Video thumbnails and audio transcoding (FFmpeg)">
+    ```bash
+    # Debian/Ubuntu
+    apt install ffmpeg
+    
+    # Alpine
+    apk add ffmpeg
+    
+    # Fedora (requires RPM Fusion)
+    dnf install ffmpeg
+    
+    # macOS
+    brew install ffmpeg
+    
+    # FreeBSD
+    pkg install ffmpeg
+    ```
+    
+    For Windows, download from [ffmpeg.org](https://ffmpeg.org/download.html#build-windows).
+  </Accordion>
+  
+  <Accordion title="Audio metadata (Mutagen)">
+    ```bash
+    pip install mutagen
+    ```
+    
+    Read ID3 tags and metadata from audio files. Alternative to using FFprobe.
+  </Accordion>
+  
+  <Accordion title="SFTP server (Paramiko)">
+    ```bash
+    pip install paramiko
+    ```
+    
+    Enable the SFTP server feature (~700 MiB/s transfer speed).
+  </Accordion>
+  
+  <Accordion title="FTP server (pyftpdlib)">
+    ```bash
+    pip install pyftpdlib
+    ```
+    
+    Enable the FTP server.
+  </Accordion>
+  
+  <Accordion title="FTPS (FTP with TLS)">
+    ```bash
+    pip install pyftpdlib pyopenssl
+    ```
+    
+    Enable FTP over TLS.
+  </Accordion>
+  
+  <Accordion title="TFTP server (partftpy)">
+    ```bash
+    pip install "partftpy>=0.4.0"
+    ```
+    
+    Enable the TFTP server.
+  </Accordion>
+  
+  <Accordion title="Password hashing (argon2-cffi)">
+    ```bash
+    pip install argon2-cffi
+    ```
+    
+    Use Argon2 for password hashing instead of the default.
+  </Accordion>
+  
+  <Accordion title="Event hooks with ZeroMQ (pyzmq)">
+    ```bash
+    pip install pyzmq
+    ```
+    
+    Send event notifications via ZeroMQ.
+  </Accordion>
+</AccordionGroup>
+
+### Install all optional dependencies
+
+```bash
+pip install "copyparty[all]"
+```
+
+This installs: argon2-cffi, paramiko, partftpy, Pillow, pyftpdlib, pyopenssl, pyzmq
+
+## Firewall configuration
+
+For servers, open the necessary ports:
+
+```bash
+# All features
+firewall-cmd --permanent --add-port={80,443,3921,3922,3923,3945,3990}/tcp
+firewall-cmd --permanent --add-port=12000-12099/tcp
+firewall-cmd --permanent --add-port={69,1900,3969,5353}/udp
+firewall-cmd --reload
+```
+
+Port reference:
+- 80/443: HTTP/HTTPS
+- 3921: FTP
+- 3922: SFTP
+- 3923: HTTP (default)
+- 3945: SMB
+- 3969: TFTP (TCP)
+- 3990: FTPS
+- 69: TFTP (UDP)
+- 1900: SSDP
+- 5353: mDNS
+- 12000-12099: Passive FTP
+
+## Verifying installation
+
+Check that copyparty is working:
+
+```bash
+copyparty --version
+```
+
+Or with the SFX:
+
+```bash
+./copyparty-sfx.py --version
+```
+
+Test run with help:
+
+```bash
+copyparty --help
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart guide" icon="rocket" href="/quickstart">
+    Learn how to configure and use copyparty
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Set up accounts, volumes, and advanced features
+  </Card>
+</CardGroup>

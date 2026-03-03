@@ -1,0 +1,375 @@
+---
+title: 'Media Features'
+description: 'Audio player, video player, transcoding, and media indexing'
+---
+
+## Overview
+
+copyparty includes a full-featured media player with audio transcoding, tag indexing, playlists, and OS integration. Perfect for self-hosting your music library.
+
+## Audio Player
+
+A sophisticated web-based audio player with advanced features.
+
+### Key Features
+
+<CardGroup cols={2}>
+  <Card title="OS Integration" icon="mobile">
+    Control playback from your phone's lockscreen or Windows media controls
+  </Card>
+  <Card title="Transcoding" icon="waveform">
+    Play any audio format via on-the-fly FFmpeg transcoding
+  </Card>
+  <Card title="Equalizer" icon="sliders">
+    Built-in EQ with dynamic range compression
+  </Card>
+  <Card title="Gapless Playback" icon="forward">
+    Nearly gapless transitions between songs
+  </Card>
+</CardGroup>
+
+### Supported Formats
+
+**Always playable** (no FFmpeg needed):
+- AAC, FLAC, M4A, MP3, OGG, Opus, WAV
+
+**With FFmpeg transcoding**:
+- AC3, AIF, AIFF, ALAC, ALAW, AMR, APE, AU, DFPWM, DTS
+- GSM, IT, M4A, MO3, MOD, MP2, MPC, MPTM, MT2, MULAW
+- OKT, RA, S3M, TAK, TTA, ULAW, WMA, WV, XM, XPK
+- **Videos** (audio track extracted)
+
+### Player Controls
+
+Click the `play` link next to an audio file to start playback.
+
+**Hotkeys:**
+- `P` - Play/Pause
+- `J/L` - Previous/Next song
+- `U/O` - Skip ±10 seconds
+- `0-9` - Jump to 0%-90%
+- `Y` - Download current file
+
+### Player Configuration
+
+Open the `[🎺]` media player settings tab:
+
+#### Switches
+
+- `[🔁]` Repeat one song forever
+- `[🔀]` Shuffle files in each folder
+- `[preload]` Start loading next track early (reduces silence between songs)
+- `[full]` Full preload (download entire next file - good for unreliable connections)
+- `[~s]` Toggle waveform display in seekbar
+- `[/np]` Enable "now playing" IRC message buttons
+- `[📻]` Enable playlist creation buttons
+- `[os-ctl]` Enable OS lockscreen controls
+- `[seek]` Allow seeking via lockscreen
+- `[art]` Show album art on lockscreen
+- `[🎯]` Auto-scroll to playing song
+- `[⟎]` Shrink playback controls
+
+#### Folder Playback
+
+- `[loop]` Loop the current folder
+- `[next]` Continue into next folder
+
+#### Transcoding Options
+
+<Tabs>
+  <Tab title="Format Selection">
+    Choose which formats to transcode:
+    
+    - `[flac]` - Convert FLAC/WAV to Opus/MP3
+    - `[aac]` - Convert AAC/M4A to Opus/MP3  
+    - `[oth]` - Convert all other formats to Opus/MP3
+  </Tab>
+  
+  <Tab title="Output Format">
+    Choose transcoding output:
+    
+    - `[opus]` - Best quality (Android, PC) - recommended
+    - `[awo]` - Opus in WebM container (iOS 17.5+)
+    - `[caf]` - Opus in CAF container (iOS 11-17)
+    - `[mp3]` - Universal compatibility, lower quality
+    - `[flac]` - Lossless (requires `--allow-flac`)
+    - `[wav]` - Uncompressed lossless (requires `--allow-wav`)
+  </Tab>
+</Tabs>
+
+<Note>
+FLAC and WAV transcoding must be explicitly enabled with `--allow-flac` and `--allow-wav` due to disk space requirements.
+</Note>
+
+### Audio Equalizer
+
+Built-in equalizer and dynamic range compressor.
+
+- Adjustable frequency bands
+- Volume boost
+- Stereo width control (similar to crossfeed)
+- Dynamic range compression
+- Reduces pause between songs (helps with gapless playback)
+
+<Warning>
+Equalizer not available on iPhone/iPad due to AudioContext breaking background playback on iOS.
+</Warning>
+
+### Playlists (M3U/M3U8)
+
+Create and play standard M3U playlists.
+
+#### Creating Playlists
+
+**Method 1: Using copyparty**
+
+1. Enable `[📻]` in player settings
+2. Click `📻add` while songs are playing or selected
+3. Click `📻copy` to get playlist content
+4. Create `playlist.m3u` and paste content
+
+**Method 2: External player**
+
+Create playlists in foobar2000, deadbeef, or any media player. Edit paths to match server URLs.
+
+#### Playing Playlists
+
+Click an `.m3u` or `.m3u8` file and choose **Play**.
+
+<Note>
+Playlists can include songs across folders but don't support filekeys/dirkeys. Users need read/get access to all files.
+</Note>
+
+## Video Player
+
+Basic video playback with gallery integration.
+
+### Features
+
+- Click video files to play inline or fullscreen
+- Navigate through videos in folder with `J/L` or arrow keys
+- Play video files as audio (audio track only, no video bandwidth)
+- Loop ranges with `[` and `]` hotkeys
+
+### Hotkeys
+
+- `J/L, ←/→` - Previous/Next video
+- `F` - Fullscreen
+- `P/K/Space` - Play/Pause  
+- `U/O` - Skip ±10 seconds
+- `0-9` - Jump to 0%-90%
+- `M` - Mute
+- `C` - Continue to next video
+- `V` - Loop current video
+- `[` - Set loop start
+- `]` - Set loop end
+
+### Audio from Video
+
+Add `?v` to any video/audio/image link to open it in the media player (audio-only for videos).
+
+## Media Indexing
+
+Index audio tags for searching and organization.
+
+### Enable Tag Indexing
+
+```bash
+# Index tags on upload and scan existing files
+copyparty -e2dsa -e2ts
+```
+
+```yaml
+[global]
+  e2dsa  # scan all files on startup
+  e2ts   # index audio/video tags
+```
+
+### Configuring Tags
+
+**Display tags** (indexed and shown):
+
+```bash
+copyparty -mte artist,title,album
+```
+
+**Hidden tags** (indexed but hidden by default):
+
+```bash
+copyparty -mth .dur,.bpm,genre
+```
+
+**Tag mappings** (combine multiple tags):
+
+```bash
+# Display 'qux' tag from 'foo' or 'bar' (prefer foo)
+copyparty -mtm qux=foo,bar -mte artist,title,qux
+```
+
+### Config File Example
+
+```yaml
+[global]
+  e2dsa
+  e2ts
+  mte: artist,title,album,.tn  # track number is numeric (.tn)
+  mth: .dur,.bpm,genre,fmt     # hidden by default
+  mtm: key=initialkey,key      # map 'key' tag
+
+[/music]
+  /mnt/music
+  accs:
+    r: *
+  flags:
+    mte: +.up_at  # also show upload time
+```
+
+### Tag Sources
+
+**Mutagen (default)**:
+- Fast (~20x faster than FFprobe)
+- Supports MP3, FLAC, Opus, M4A, WAV, AIF
+
+**FFprobe** (with `--no-mutagen`):
+- Slower but more comprehensive
+- Additional tags: melodic key, video resolution, framerate
+- Processes all FFmpeg-supported formats
+
+### Available Metadata Tags
+
+Common tags include:
+- `artist`, `title`, `album`
+- `.tn` (track number), `.dur` (duration - numeric tags start with `.`)
+- `genre`, `date`, `composer`
+- `.bpm`, `key`, `comment`
+- `.resw`, `.resh` (video resolution)
+- `fmt` (format/codec)
+
+## Custom Tag Parsers
+
+Extend metadata with external programs.
+
+```yaml
+[/music]  
+  /mnt/music
+  flags:
+    mtp: .bpm=~/bin/audio-bpm.py           # basic BPM detection
+    mtp: key=f,t5,~/bin/audio-key.py       # force, 5sec timeout
+    mtp: ext=an,~/bin/file-ext.py          # non-audio files only
+```
+
+Parser flags:
+- `f` - Force/overwrite existing tags
+- `t5` - 5 second timeout
+- `ay` - Audio files only (default)
+- `an` - Non-audio files only
+- `ad` - All files
+
+See [parser examples](https://github.com/9001/copyparty/tree/hovudstraum/bin/mtag).
+
+## Transcoding Configuration
+
+### Server-Side
+
+```bash
+# Allow FLAC transcoding output
+copyparty --allow-flac
+
+# Allow WAV transcoding output  
+copyparty --allow-wav
+
+# Set tag scan timeout (default 60 seconds)
+copyparty --mtag-to 10
+```
+
+### Per-Volume
+
+```yaml
+[/hifi]
+  /mnt/hifi
+  flags:
+    aconvt: 30   # transcoding timeout in seconds
+```
+
+## Advanced Features
+
+### Folder Thumbnails from Audio
+
+With `-e2dsa` enabled, copyparty extracts album art for folder thumbnails.
+
+Cover image priority:
+1. `folder.png` / `folder.jpg`
+2. `cover.png` / `cover.jpg`  
+3. `.folder.png` / `.folder.jpg` (dotfiles)
+4. First image in folder
+5. Embedded album art
+
+Customize with:
+```bash
+copyparty --th-covers folder.png,cover.jpg,front.png
+```
+
+### Sort by Metadata
+
+```bash
+# Sort by album, track number, artist, title
+copyparty --sort tags/Circle,tags/.tn,tags/Artist,tags/Title
+```
+
+```yaml
+[/music]
+  /mnt/music
+  flags:
+    sort: tags/Artist,tags/Album,tags/.tn
+```
+
+### Extended File Attributes (Linux)
+
+Index xattrs as metadata:
+
+```bash
+# Index specific xattrs
+copyparty --db-xattr user.rating,user.genre -mte +user.rating,user.genre
+
+# Index all xattrs
+copyparty --db-xattr ~~ -mte +*
+```
+
+Set xattrs:
+```bash
+setfattr -n user.rating -v "5/5" song.mp3
+```
+
+## Performance Tuning
+
+<Tip>
+- Use Mutagen (default) for faster tag scanning
+- Lower `--mtag-to` timeout if your filesystem is reliable (default 60s is for ZFS/network)
+- Enable waveform caching with reasonable `--th-maxage`
+- Disable video transcoding with `--no-vthumb` if not needed
+</Tip>
+
+## Example: Music Server
+
+```yaml
+[global]
+  e2dsa              # full filesystem indexing
+  e2ts               # audio tag indexing  
+  no-robots          # prevent search engine indexing
+  theme: 2           # flat pm-monokai theme
+  mte: artist,title,album,.tn,.dur
+  mth: .bpm,key,genre,fmt
+  sort: tags/Artist,tags/Album,tags/.tn
+
+[/music]
+  /mnt/nas/music
+  accs:
+    r: *             # public read-only
+  flags:
+    mtp: .bpm=f,audio-bpm.py
+    mtp: key=f,audio-key.py
+```
+
+```bash
+copyparty -c music-server.conf
+```

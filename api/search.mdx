@@ -1,0 +1,399 @@
+---
+title: Search API
+description: Search files by name, metadata, tags, and content hashes
+---
+
+copyparty provides powerful search capabilities including metadata search, tag-based queries, and content-hash lookups.
+
+## Basic Search
+
+Search for files by name, path, or metadata:
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "PW: your-password" \
+  -d '{"q": "vacation photos"}' \
+  http://server:3923/ | jq
+```
+
+<ParamField body="q" type="string" required>
+  Search query string. Supports multiple search operators and filters
+</ParamField>
+
+<ParamField body="n" type="integer" default="200">
+  Maximum number of results to return (server default configurable with `--srch-hits`)
+</ParamField>
+
+## Search Syntax
+
+### Text Search
+
+Basic text matching:
+
+```json
+{"q": "vacation"}
+```
+
+Matches files/paths containing "vacation".
+
+### Multiple Terms (AND)
+
+```json
+{"q": "vacation beach 2024"}
+```
+
+Matches files containing all three terms.
+
+### Phrase Search
+
+```json
+{"q": "\"family vacation\""}
+```
+
+Matches exact phrase "family vacation".
+
+### Wildcard Search
+
+```json
+{"q": "*.jpg"}
+```
+
+Matches all JPEG files.
+
+## Search Filters
+
+### Size Filters
+
+Filter by file size:
+
+```json
+{"q": "size:>10M"}
+```
+
+<ParamField query="size" type="string">
+  Size filter operators:
+  - `size:>10M` - Larger than 10 MiB
+  - `size:<1G` - Smaller than 1 GiB
+  - `size:=1024` - Exactly 1024 bytes
+  - Units: `K` (KiB), `M` (MiB), `G` (GiB), `T` (TiB)
+</ParamField>
+
+### Date Filters
+
+Filter by modification date:
+
+```json
+{"q": "date:>2024-01-01"}
+```
+
+<ParamField query="date" type="string">
+  Date filter operators:
+  - `date:>2024-01-01` - Modified after Jan 1, 2024
+  - `date:<2024-12-31` - Modified before Dec 31, 2024
+  - `date:=2024-03-03` - Modified on Mar 3, 2024
+  - Format: `YYYY-MM-DD` or `YYYY-MM-DD HH:MM:SS`
+</ParamField>
+
+### Path Filters
+
+Search in specific paths:
+
+```json
+{"q": "path:/photos vacation"}
+```
+
+<ParamField query="path" type="string">
+  Restrict search to specific path prefix
+</ParamField>
+
+### Extension Filters
+
+```json
+{"q": "ext:jpg,png,gif beach"}
+```
+
+<ParamField query="ext" type="string">
+  Filter by file extension (comma-separated list)
+</ParamField>
+
+## Tag Search
+
+Search by metadata tags (requires indexing with `-e2ts`):
+
+### Artist Search
+
+```json
+{"q": "artist:Beethoven"}
+```
+
+### Album Search
+
+```json
+{"q": "album:\"Symphony No. 9\""}
+```
+
+### Title Search
+
+```json
+{"q": "title:Moonlight"}
+```
+
+### Genre Search
+
+```json
+{"q": "genre:Classical"}
+```
+
+### Year Search
+
+```json
+{"q": "year:2020"}
+```
+
+### Bitrate Search
+
+```json
+{"q": "rate:>320"}
+```
+
+Bitrate in kbps.
+
+### Duration Search
+
+```json
+{"q": "dur:>180"}
+```
+
+Duration in seconds.
+
+## Combined Queries
+
+Combine multiple filters:
+
+```json
+{
+  "q": "artist:Mozart genre:Classical year:>1780 ext:flac size:>10M"
+}
+```
+
+## Content Hash Search
+
+Search for files by up2k content hash:
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "PW: your-password" \
+  -d '{
+    "srch": true,
+    "hash": [
+      "base64-encoded-chunk-hash-1",
+      "base64-encoded-chunk-hash-2"
+    ]
+  }' \
+  http://server:3923/ | jq
+```
+
+<ParamField body="srch" type="boolean" required>
+  Enable hash-based search mode
+</ParamField>
+
+<ParamField body="hash" type="array" required>
+  Array of up2k chunk hashes (URL-safe base64 encoded SHA-512)
+</ParamField>
+
+Returns files that match any of the provided hashes.
+
+## Search Response
+
+### Successful Response
+
+```json
+{
+  "hits": [
+    {
+      "rp": "/music/album/01-track.flac",
+      "fn": "01-track.flac",
+      "sz": 45678901,
+      "mt": 1234567890,
+      "tags": {
+        "artist": "Example Artist",
+        "album": "Example Album",
+        "title": "Track 1",
+        "track": "1",
+        "year": "2024",
+        "genre": "Electronic"
+      }
+    }
+  ],
+  "tag_order": ["artist", "album", "title", "track", "year", "genre"],
+  "trunc": false
+}
+```
+
+<ResponseField name="hits" type="array">
+  Array of matching files
+</ResponseField>
+
+<ResponseField name="hits[].rp" type="string">
+  Relative path from volume root
+</ResponseField>
+
+<ResponseField name="hits[].fn" type="string">
+  Filename
+</ResponseField>
+
+<ResponseField name="hits[].sz" type="integer">
+  File size in bytes
+</ResponseField>
+
+<ResponseField name="hits[].mt" type="integer">
+  Modification timestamp (Unix epoch)
+</ResponseField>
+
+<ResponseField name="hits[].tags" type="object">
+  Metadata tags (if indexed with `-e2ts`)
+</ResponseField>
+
+<ResponseField name="tag_order" type="array">
+  Recommended order for displaying tags
+</ResponseField>
+
+<ResponseField name="trunc" type="boolean">
+  True if results were truncated (hit result limit)
+</ResponseField>
+
+## Rate Limiting
+
+Search implements adaptive rate limiting:
+
+```json
+{
+  "error": "rate-limit 0.7 sec, cost 0.85, idle 0.32"
+}
+```
+
+- Queries taking > 0.7s incur 0.7s penalty
+- Next query must wait until penalty expires
+- Returns HTTP 429 if attempted too soon
+
+<Warning>
+  Rate limiting prevents expensive queries from overloading the server. Wait for the penalty duration before retrying.
+</Warning>
+
+## Search Requirements
+
+### Indexing
+
+Search requires file indexing to be enabled:
+
+```bash
+# Enable basic indexing
+copyparty -e2dsa
+
+# Enable metadata indexing (for tag search)
+copyparty -e2dsa -e2ts
+```
+
+<Info>
+  - `-e2d` - Enable file indexing (delete tracking)
+  - `-e2s` - Enable search
+  - `-e2a` - Enable all indexing features
+  - `-e2ts` - Index audio/video metadata tags
+</Info>
+
+### SQLite Requirement
+
+Search requires SQLite3:
+
+```json
+{
+  "error": "sqlite3 not found on server; search is disabled"
+}
+```
+
+If SQLite is not available, search will return HTTP 500.
+
+## Search Examples
+
+### Find Large Files
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"q": "size:>1G", "n": 50}' \
+  http://server:3923/
+```
+
+### Find Recent Photos
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"q": "date:>2024-01-01 ext:jpg,png,heic"}' \
+  http://server:3923/
+```
+
+### Find High-Quality Audio
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"q": "ext:flac rate:>900"}' \
+  http://server:3923/
+```
+
+### Find Music by Artist
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"q": "artist:Beatles album:Abbey"}' \
+  http://server:3923/
+```
+
+### Find Long Videos
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"q": "ext:mp4,mkv,webm dur:>3600"}' \
+  http://server:3923/
+```
+
+## Search Tips
+
+<Tip>
+  - Use quotes for exact phrase matching: `"exact phrase"`
+  - Combine multiple filters for precise results
+  - Use wildcards for pattern matching: `*.log`
+  - Check `trunc` field - if true, refine query to get more specific results
+  - Tag search requires `-e2ts` server flag and FFprobe or Mutagen installed
+</Tip>
+
+## Error Handling
+
+<ResponseField name="429" type="error">
+  Rate limit exceeded - wait for penalty duration before retrying
+</ResponseField>
+
+<ResponseField name="500" type="error">
+  Search unavailable - SQLite not found or indexing not enabled
+</ResponseField>
+
+<ResponseField name="503" type="error">
+  Server busy - indexing in progress, retry in a moment
+</ResponseField>
+
+## Performance Considerations
+
+- First search after server restart may be slow (index loading)
+- Wildcard searches are slower than exact matches
+- Tag searches require metadata indexing (adds overhead)
+- Large result sets may be truncated (use more specific queries)
+- Rate limiting prevents search abuse
+
+## Custom Tag Parsers
+
+You can add custom metadata parsers with [file parser plugins](https://github.com/9001/copyparty#file-parser-plugins) to index additional file types and tags.

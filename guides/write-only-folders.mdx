@@ -1,0 +1,406 @@
+---
+title: 'Write-Only Upload Folders'
+description: 'Configure anonymous upload folders where users can submit files without seeing other uploads'
+---
+
+## Overview
+
+Write-only folders let users upload files without being able to browse, download, or see other uploads. This is perfect for:
+
+- Anonymous file submissions
+- Homework/assignment collection
+- Bug report attachments
+- Survey response uploads
+- Photo contest entries
+
+## Basic Write-Only Folder
+
+The simplest write-only setup:
+
+```bash
+python copyparty-sfx.py -v /mnt/uploads:/drop:w
+```
+
+- `/mnt/uploads` - Local folder for uploads
+- `/drop` - URL path (`http://your-server:3923/drop`)
+- `w` - Write-only permission for everyone
+
+Users can upload but **cannot** see any files, including their own.
+
+## Write-Only with Admin Access
+
+<Steps>
+
+### Create accounts
+
+Set up a write-only folder with an admin who can manage uploads:
+
+```bash
+python copyparty-sfx.py \
+  -a admin:secretpass \
+  -e2d \
+  -v /mnt/uploads:/drop:w:A,admin
+```
+
+- `w` - Everyone can upload
+- `A,admin` - User `admin` has full access (read/write/move/delete/admin)
+- `-e2d` - Enable database for upload tracking
+
+### Using configuration file
+
+```yaml dropbox.conf
+[global]
+  e2d      # enable upload database
+  
+[accounts]
+  admin: secretpass
+  
+[/drop]
+  /mnt/uploads
+  accs:
+    w: *       # everyone can upload
+    A: admin   # admin can do everything
+```
+
+Run with:
+```bash
+python copyparty-sfx.py -c dropbox.conf
+```
+
+</Steps>
+
+## Upload with Secret Links (upget)
+
+Let users upload files and receive a secret download link:
+
+```bash
+python copyparty-sfx.py -e2dsa \
+  -v /mnt/uploads:/drop:wG:c,fk=8
+```
+
+- `wG` - Write permission + Upget (upload and get link)
+- `fk=8` - Filekey length (8 random characters)
+- `-e2dsa` - Required for filekeys
+
+After upload, users receive a link like:
+```
+http://your-server:3923/drop/photo.jpg?k=Xa9mK2pQ
+```
+
+Only someone with this exact link can download the file.
+
+## Upload Rules and Limits
+
+### File Size Limits
+
+```yaml
+[/drop]
+  /mnt/uploads
+  accs:
+    w: *
+  flags:
+    sz: 100k-50m    # files between 100KB and 50MB only
+    df: 10g         # keep at least 10GB free disk space
+    vmaxb: 100g     # total volume cannot exceed 100GB
+    vmaxn: 10000    # maximum 10,000 files in volume
+```
+
+### Rate Limiting (per-IP)
+
+```yaml
+[/drop]
+  /mnt/uploads
+  accs:
+    w: *
+  flags:
+    maxn: 50,3600   # max 50 files per hour per IP
+    maxb: 500m,3600 # max 500MB per hour per IP
+```
+
+### File Lifetime (auto-delete)
+
+Automatically delete files after a certain time:
+
+```yaml
+[/drop]
+  /mnt/uploads
+  accs:
+    w: *
+  flags:
+    lifetime: 604800  # delete files after 7 days (seconds)
+```
+
+Users can also set custom expiration times in the upload UI (if enabled).
+
+### Restrict to Top-Level Uploads
+
+Prevent users from creating subdirectories:
+
+```yaml
+[/drop]
+  /mnt/uploads
+  accs:
+    w: *
+  flags:
+    nosub    # uploads must go to root folder only
+```
+
+## Organizing Uploads
+
+### Automatic Folder Organization by Date
+
+Organize uploads into date-based folders:
+
+```yaml
+[/drop]
+  /mnt/uploads
+  accs:
+    w: *
+  flags:
+    rotf: %Y/%m/%d           # organize as 2024/03/15/
+    rotf_tz: America/New_York # set timezone (default UTC)
+```
+
+Uploads automatically go into folders like:
+```
+/mnt/uploads/2024/03/15/photo.jpg
+```
+
+### Automatic Folder Organization by Count
+
+Create subfolders after a certain number of files:
+
+```yaml
+[/drop]
+  /mnt/uploads
+  accs:
+    w: *
+  flags:
+    nosub          # users can't pick subfolder
+    rotn: 1000,2   # 1000 files per folder, 2 levels deep
+```
+
+Creates folders like:
+```
+/mnt/uploads/0/0/file001.jpg
+/mnt/uploads/0/0/file002.jpg
+...
+/mnt/uploads/0/1/file1001.jpg
+```
+
+## Preventing Duplicate Uploads
+
+```bash
+python copyparty-sfx.py -e2dsa --dedup \
+  -v /mnt/uploads:/drop:w
+```
+
+- `-e2dsa` - Index all files
+- `--dedup` - Create symlinks for duplicate files
+
+If someone uploads a file that already exists, copyparty creates a symlink instead of storing a duplicate copy.
+
+## Allowing Users to Delete Their Own Uploads (Unpost)
+
+```bash
+python copyparty-sfx.py -e2d --unpost 43200 \
+  -v /mnt/uploads:/drop:w
+```
+
+- `--unpost 43200` - Allow undoing uploads within 12 hours (43200 seconds)
+- Users access via the `[🧯]` unpost tab
+
+Users can delete their own recent uploads even without delete permission.
+
+## Write-Only with Move Access
+
+Let one user upload, another user review and move approved files:
+
+```yaml
+[accounts]
+  student: pass1
+  teacher: pass2
+
+[/submissions]
+  /mnt/submissions
+  accs:
+    w: student     # students can upload only
+    rm: teacher    # teacher can read and move files
+    
+[/approved]
+  /mnt/approved
+  accs:
+    w: teacher     # teacher can move files here
+    r: *           # everyone can browse approved submissions
+```
+
+Workflow:
+1. Students upload to `/submissions`
+2. Teacher reviews files
+3. Teacher moves approved files to `/approved`
+4. Everyone can see approved submissions
+
+## Upload Notifications
+
+### Email Notifications
+
+Use event hooks to send email on upload:
+
+```bash
+python copyparty-sfx.py -e2d \
+  --xau /usr/local/bin/notify-upload.sh \
+  -v /mnt/uploads:/drop:w
+```
+
+Create `notify-upload.sh`:
+```bash
+#!/bin/bash
+FILE="$1"
+echo "New upload: $FILE" | mail -s "File uploaded" admin@example.com
+```
+
+Make it executable:
+```bash
+chmod +x /usr/local/bin/notify-upload.sh
+```
+
+### Desktop Notifications
+
+On Linux, show a popup notification:
+
+```bash
+python copyparty-sfx.py -e2d \
+  --xau notify-send,"New upload",-- \
+  -v /mnt/uploads:/drop:w
+```
+
+## Advanced: Randomized Filenames
+
+Force random filenames on upload:
+
+```yaml
+[/drop]
+  /mnt/uploads
+  accs:
+    wG: *    # write + get filekey
+  flags:
+    fk: 8    # 8-char filekey required
+```
+
+In the upload UI, users can enable `[🎲]` to randomize filenames, or make it mandatory with a custom upload hook.
+
+## Complete Example: Anonymous Dropbox
+
+```yaml anonymous-dropbox.conf
+[global]
+  e2dsa              # index files
+  dedup              # prevent duplicates  
+  unpost: 3600       # allow deletion within 1 hour
+  theme: 2           # dark theme
+
+[accounts]
+  admin: very-secret-password
+
+[/drop]
+  /mnt/dropbox
+  accs:
+    wG: *            # anyone can upload and get link
+    A: admin         # admin has full access
+  flags:
+    fk: 10           # 10-character filekeys for security
+    sz: 1k-100m      # 1KB to 100MB files only
+    df: 20g          # keep 20GB free
+    vmaxb: 500g      # max 500GB total
+    maxn: 100,3600   # 100 files per hour per IP
+    maxb: 1g,3600    # 1GB per hour per IP
+    lifetime: 2592000 # auto-delete after 30 days
+    nosub            # no subdirectories
+    rotf: %Y/%m/%d   # organize by date
+```
+
+Start the server:
+```bash
+python copyparty-sfx.py -c anonymous-dropbox.conf
+```
+
+Features:
+- ✅ Anonymous uploads with secret links
+- ✅ 1 hour undo window
+- ✅ Size and rate limits
+- ✅ Auto-delete after 30 days
+- ✅ Organized by upload date
+- ✅ Duplicate prevention
+- ✅ Admin can review everything
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Users can see other uploads">
+    Make sure you're using `w` or `wG` permission, NOT `rw` or `r`.
+
+    ```yaml
+    accs:
+      w: *     # correct - write-only
+      # rw: *  # wrong - this allows reading!
+    ```
+  </Accordion>
+
+  <Accordion title="Filekeys not working">
+    Filekeys require database indexing:
+
+    ```bash
+    python copyparty-sfx.py -e2dsa -v /mnt/uploads:/drop:wG:c,fk=8
+    ```
+
+    The `-e2dsa` is mandatory for filekeys.
+  </Accordion>
+
+  <Accordion title="Unpost not working">
+    Unpost requires `-e2d` and the `--unpost` timeout:
+
+    ```bash
+    python copyparty-sfx.py -e2d --unpost 43200 -v /mnt/uploads:/drop:w
+    ```
+  </Accordion>
+
+  <Accordion title="Rate limits not enforced">
+    Rate limits (`maxn`, `maxb`) require `-j 1` (single process mode):
+
+    ```bash
+    python copyparty-sfx.py -j 1 -v /mnt/uploads:/drop:w:c,maxn=50,3600
+    ```
+  </Accordion>
+
+  <Accordion title="Users getting banned">
+    Check the ban settings:
+
+    ```bash
+    python copyparty-sfx.py --ban-pw 0 --ban-404 0 -v /mnt/uploads:/drop:w
+    ```
+
+    Or increase the thresholds (default is 9 failed attempts in 1 hour).
+  </Accordion>
+</AccordionGroup>
+
+## Security Considerations
+
+<Warning>
+  Write-only folders can be abused for:
+  - Storing illegal content
+  - Malware distribution  
+  - Phishing attacks
+  
+  Mitigate risks:
+  - Set file size limits
+  - Enable rate limiting
+  - Use auto-deletion (lifetime)
+  - Monitor uploads regularly
+  - Consider requiring accounts instead of anonymous access
+</Warning>
+
+## Next Steps
+
+- Set up [file sharing](/guides/file-sharing) with mixed permissions
+- Configure [deduplication](/guides/deduplication) to save disk space
+- Enable [authentication](/guides/authentication) for better security
+- Create a [media server](/guides/media-server) for approved uploads

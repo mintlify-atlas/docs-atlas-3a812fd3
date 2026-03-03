@@ -1,0 +1,332 @@
+---
+title: 'partyfuse.py'
+description: 'Mount copyparty server as local filesystem'
+---
+
+# partyfuse.py
+
+The `partyfuse.py` client mounts a copyparty server (or any HTTP server) as a local filesystem using FUSE.
+
+## Synopsis
+
+```bash
+python partyfuse.py [OPTIONS] URL MOUNTPOINT
+```
+
+## Description
+
+partyfuse provides read-only filesystem access to a copyparty server with excellent performance:
+- 1 GiB/s reading large files
+- 27,000 files/sec copying small files
+- 700 folders/sec traversing directories
+- Smart caching for optimal performance
+- Support for multiple HTTP server types
+
+## Requirements
+
+### Linux
+```bash
+sudo apt install fuse libfuse2
+sudo modprobe fuse
+python3 -m pip install --user fusepy
+```
+
+### macOS
+```bash
+# Install from https://osxfuse.github.io/
+python3 -m pip install --user fusepy
+```
+
+### Windows
+```bash
+# Install WinFsp from https://github.com/billziss-gh/winfsp/releases/latest
+python3 -m pip install --user fusepy
+```
+
+## Required Arguments
+
+<ParamField path="base_url" type="string" required>
+  Remote copyparty URL to mount.
+  
+  **Examples:**
+  - `http://192.168.1.69:3923/`
+  - `https://files.example.com/music/`
+  - `http://server.local:3923/share/`
+</ParamField>
+
+<ParamField path="local_path" type="string" required>
+  Local directory or drive letter to mount on.
+  
+  **Linux/macOS:** `./mountpoint` or `/mnt/copyparty`
+  
+  **Windows:** `M:` or `.\mountpoint`
+</ParamField>
+
+## Authentication
+
+<ParamField path="-a" type="string">
+  Password for authentication.
+  
+  Can be:
+  - Plain password: `-a hunter2`
+  - Username:password if `--usernames` enabled: `-a alice:hunter2`
+  - Path to file: `-a $~/.copyparty-pass`
+</ParamField>
+
+## TLS/SSL Options
+
+<ParamField path="-te" type="path">
+  Path to CA certificate or server certificate to verify.
+  
+  **Example:** `-te /path/to/cert.pem`
+</ParamField>
+
+<ParamField path="-teh" type="boolean">
+  Require correct hostname in certificate.
+</ParamField>
+
+<ParamField path="-td" type="boolean">
+  Disable TLS certificate verification (insecure).
+</ParamField>
+
+## HTML Parser Options
+
+<ParamField path="--html" type="string">
+  Which HTML parser to use for non-copyparty servers.
+  
+  **Values:**
+  - `cpp` - copyparty (default, uses JSON API)
+  - `nginx` - nginx autoindex
+  - `iis` - Microsoft IIS
+  
+  **Note:** Only needed for non-copyparty HTTP servers.
+</ParamField>
+
+## Cache Options
+
+<ParamField path="-cdn" type="float" default="24">
+  Directory cache - maximum number of cached directories.
+  
+  **Recommendation:** Keep larger than maximum directory depth.
+  
+  Set to `0` to disable caching (not recommended).
+</ParamField>
+
+<ParamField path="-cds" type="float" default="1">
+  Directory cache - expiration time in seconds.
+  
+  Cached directory listings are considered stale after this time.
+</ParamField>
+
+<ParamField path="-cf" type="integer" default="12">
+  File cache - number of data blocks to cache.
+  
+  Each block is up to 1 MiB. Higher values improve performance for:
+  - Small reads (4K - 64K typical on Windows)
+  - Repeated access to same file regions
+  
+  **Recommended:**
+  - Windows: `12-24` (uses 4K and 64K reads)
+  - Linux: `8-16` (typically uses 128K reads)
+</ParamField>
+
+## Logging Options
+
+<ParamField path="-q" type="boolean">
+  Quiet mode - minimal output.
+</ParamField>
+
+<ParamField path="-d" type="boolean">
+  Debug/verbose mode - detailed logging.
+</ParamField>
+
+<ParamField path="--slowterm" type="boolean">
+  Only show recent messages (good for Windows terminals).
+</ParamField>
+
+<ParamField path="--logf" type="path">
+  Write logs to file (automatically enables `--slowterm`).
+  
+  **Example:** `--logf /var/log/partyfuse.log`
+</ParamField>
+
+## FUSE Options
+
+<ParamField path="--oth" type="boolean">
+  Allow other users to access the mounted filesystem (`-o allow_other`).
+  
+  **Note:** May require FUSE configuration changes.
+</ParamField>
+
+<ParamField path="--nonempty" type="boolean">
+  Allow mounting over a non-empty directory (`-o nonempty`).
+</ParamField>
+
+## Examples
+
+### Basic mount
+```bash
+python partyfuse.py http://192.168.1.69:3923/ ./music
+```
+Mount server root to `./music` directory.
+
+### Mount with authentication
+```bash
+python partyfuse.py -a hunter2 https://server:3923/files/ /mnt/remote
+```
+Mount authenticated share to `/mnt/remote`.
+
+### Windows mount
+```bash
+python partyfuse.py http://192.168.1.100:3923/music/ M:
+```
+Mount as M: drive on Windows.
+
+### Mount with custom cache settings
+```bash
+python partyfuse.py -cdn 48 -cf 24 http://server:3923/ ./mount
+```
+Increase caching for better performance (uses more RAM).
+
+### Mount nginx server
+```bash
+python partyfuse.py --html nginx http://files.example.com/ ./files
+```
+Mount non-copyparty HTTP server with nginx autoindex.
+
+### Secure mount with logging
+```bash
+python partyfuse.py \
+  -te /etc/ssl/certs/server.pem \
+  -teh \
+  --logf /var/log/partyfuse.log \
+  https://server.local/ /mnt/server
+```
+Secure mount with certificate verification and logging.
+
+### Debug mode
+```bash
+python partyfuse.py -d http://192.168.1.69:3923/ ./test
+```
+Mount with verbose debugging output.
+
+## Performance Tips
+
+### Cache Tuning
+
+1. **Directory cache** (`-cdn`, `-cds`):
+   - Increase `-cdn` for deep directory trees
+   - Increase `-cds` for mostly-static content
+   - Decrease `-cds` for frequently changing content
+
+2. **File cache** (`-cf`):
+   - Windows needs higher values (12-24) due to small read sizes
+   - Linux can use lower values (8-16)
+   - Increase for better performance, decrease to save RAM
+   - Each cached block is up to 1 MiB
+
+### Network Performance
+
+- Use `-q` to reduce CPU usage from logging
+- For slow networks, increase `-cf` to reduce round-trips
+- For local network, default settings are usually optimal
+
+### Platform-Specific
+
+**Windows:**
+- Use `--slowterm` for better terminal responsiveness
+- Recommended: `-cf 16` or higher
+- Consider registry tweaks to disable thumbnails and folder type detection
+
+**Linux:**
+- Default settings are usually optimal
+- For NFS re-export, may need to adjust cache settings
+
+**macOS:**
+- Use `--slowterm` if terminal is slow
+- OSXFUSE/macFUSE must be installed first
+
+## Technical Details
+
+### Caching Strategy
+
+partyfuse uses intelligent caching:
+
+1. **Directory Cache**:
+   - Caches directory listings
+   - LRU eviction when limit reached
+   - Time-based expiration
+
+2. **File Cache**:
+   - Caches file data blocks (up to 1 MiB each)
+   - Adaptive range expansion based on access patterns:
+     - Small files: ±64K padding
+     - Medium files: ±256K to 4 MiB padding
+     - Large sequential reads: up to 8 MiB chunks
+   - Smart partial matching (car/cdr) to minimize downloads
+
+### HTTP Range Requests
+
+partyfuse uses HTTP byte-range requests to download only needed data:
+- Requests are padded to cache surrounding data
+- Multiple small reads are coalesced when possible
+- Large sequential access triggers bigger chunks
+
+### Server Compatibility
+
+Works with:
+- **copyparty** - Full support via JSON API (best performance)
+- **nginx** - Via autoindex HTML parsing
+- **IIS** - Via directory listing HTML parsing
+- **Apache** - May work with directory indexes
+- Any HTTP server with directory listings
+
+## Limitations
+
+- **Read-only** - No write support (use WebDAV or SFTP for writes)
+- **No extended attributes** - Standard file metadata only
+- **No hardlinks** - Each file appears once
+- **Static content** - Cache may show stale data (adjustable with `-cds`)
+
+## Troubleshooting
+
+### Mount fails
+
+1. Check FUSE is installed:
+   ```bash
+   # Linux
+   lsmod | grep fuse
+   # macOS
+   kextstat | grep fuse
+   ```
+
+2. Check permissions:
+   ```bash
+   # May need to add user to 'fuse' group
+   sudo usermod -a -G fuse $USER
+   ```
+
+3. Try with `--nonempty` if directory not empty
+
+### Slow performance
+
+1. Increase file cache: `-cf 24`
+2. Increase directory cache: `-cdn 48`
+3. Check network latency to server
+4. Enable quiet mode: `-q`
+
+### Stale data
+
+- Decrease cache time: `-cds 0.5`
+- Or remount to clear cache
+
+### Windows issues
+
+1. Install WinFsp from official site
+2. Use `--slowterm` for better terminal performance
+3. Try drive letter mount instead of directory
+
+## See Also
+
+- [copyparty](/cli/copyparty) - Main server command
+- [u2c](/cli/u2c) - Upload client

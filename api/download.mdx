@@ -1,0 +1,451 @@
+---
+title: Download API
+description: Download files, folders as archives, and stream content
+---
+
+copyparty provides flexible download capabilities including direct file downloads, folder archives, thumbnails, and streaming.
+
+## Download Files
+
+### Direct Download
+
+Download a file directly:
+
+```bash
+curl -H "PW: your-password" \
+  http://server:3923/path/to/file.txt
+```
+
+### Force Download (Don't Display in Browser)
+
+Add `?dl` to force download instead of browser display:
+
+```bash
+curl http://server:3923/path/to/file.txt?dl
+```
+
+<ParamField query="dl" type="boolean">
+  Force download with `Content-Disposition: attachment` header
+</ParamField>
+
+### Partial Downloads (Range Requests)
+
+copyparty supports HTTP range requests for resumable downloads:
+
+```bash
+curl -H "Range: bytes=0-1023" \
+  http://server:3923/large-file.bin
+```
+
+## Archive Downloads
+
+Download entire folders as compressed archives.
+
+### TAR Archives
+
+Download folder as tar file:
+
+```bash
+curl "http://server:3923/folder/?tar" -o folder.tar
+```
+
+<ParamField query="tar" type="string" default="gnu">
+  Archive format. Options:
+  - (empty) - Plain GNU tar
+  - `pax` - PAX format (futureproof)
+  - `gz` or `gz:N` - Gzip compressed (level 0-9, default 3)
+  - `xz` or `xz:N` - XZ/LZMA compressed (level 0-9, default 1)
+  - `bz2` or `bz2:N` - Bzip2 compressed (level 1-9, default 2)
+</ParamField>
+
+### Examples
+
+```bash
+# Plain tar (fast, streamable)
+curl "http://server:3923/music/?tar" -o music.tar
+
+# Gzip compressed tar (level 3)
+curl "http://server:3923/music/?tar=gz" -o music.tgz
+
+# Gzip compressed tar (level 9 = best compression)
+curl "http://server:3923/music/?tar=gz:9" -o music.tgz
+
+# XZ compressed tar (level 9)
+curl "http://server:3923/music/?tar=xz:9" -o music.txz
+
+# PAX format tar
+curl "http://server:3923/music/?tar=pax" -o music.tar
+```
+
+### ZIP Archives
+
+Download folder as zip file:
+
+```bash
+curl "http://server:3923/folder/?zip" -o folder.zip
+```
+
+<ParamField query="zip" type="string" default="utf8">
+  ZIP format variant:
+  - (empty) - Modern UTF-8 filenames
+  - `dos` - CP437 encoding (Windows XP compatibility)
+  - `crc` - CP437 with early CRC32 (MS-DOS PKZIP v2.04g compatibility)
+</ParamField>
+
+### Selective Archives
+
+Download only selected files/folders as archive:
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '["file1.txt", "subfolder/file2.txt"]' \
+  "http://server:3923/folder/?tar" -o selected.tar
+```
+
+## Archive Modifiers
+
+### Transcode Audio
+
+Convert audio files on-the-fly while archiving:
+
+```bash
+# Convert to Opus
+curl "http://server:3923/music/?tar&opus" -o music.tar
+
+# Convert to MP3  
+curl "http://server:3923/music/?tar&mp3" -o music.tar
+```
+
+<ParamField query="opus" type="boolean">
+  Transcode all audio (except aac/m4a/mp3/ogg/opus/wma) to 128kbps Opus
+</ParamField>
+
+<ParamField query="mp3" type="boolean">
+  Transcode all audio (except aac/m4a/mp3/ogg/opus/wma) to MP3
+</ParamField>
+
+### Generate Thumbnails
+
+Replace media files with thumbnails:
+
+```bash
+# JPEG thumbnails
+curl "http://server:3923/photos/?tar&j" -o thumbnails.tar
+
+# WebM video thumbnails
+curl "http://server:3923/videos/?tar&w" -o thumbnails.tar
+
+# Audio waveforms (PNG)
+curl "http://server:3923/music/?tar&p" -o waveforms.tar
+```
+
+<ParamField query="j" type="boolean">
+  Include JPEG thumbnails instead of original images/videos
+</ParamField>
+
+<ParamField query="w" type="boolean">
+  Include WebM thumbnails for videos
+</ParamField>
+
+<ParamField query="p" type="boolean">
+  Include PNG waveforms for audio files
+</ParamField>
+
+### Exclude Dotfiles
+
+```bash
+curl "http://server:3923/folder/?tar&nodot" -o folder.tar
+```
+
+<ParamField query="nodot" type="boolean">
+  Exclude dotfiles and dotfolders from archive
+</ParamField>
+
+## File Listings
+
+Get folder contents as structured data.
+
+### JSON Listing
+
+```bash
+curl "http://server:3923/folder/?ls" | jq
+```
+
+<ResponseField name="dirs" type="array">
+  List of subdirectories with metadata
+</ResponseField>
+
+<ResponseField name="files" type="array">
+  List of files with size, modification time, and permissions
+</ResponseField>
+
+### Plaintext Listing
+
+```bash
+curl "http://server:3923/folder/?ls=t"
+```
+
+<ParamField query="ls" type="string">
+  Listing format:
+  - (empty) - JSON format
+  - `t` - Plaintext (one per line)
+  - `v` - Terminal-formatted (with colors)
+</ParamField>
+
+### Include Dotfiles in Listings
+
+```bash
+curl "http://server:3923/folder/?ls&dots"
+```
+
+<ParamField query="dots" type="boolean">
+  Include dotfiles in listing (requires dot permission)
+</ParamField>
+
+### Symlink Timestamps
+
+```bash
+curl "http://server:3923/folder/?ls&lt"
+```
+
+<ParamField query="lt" type="boolean">
+  Use symlink timestamps instead of target file timestamps
+</ParamField>
+
+## Directory Tree
+
+Get nested directory structure:
+
+```bash
+# One level of subdirectories
+curl "http://server:3923/folder/?tree=."
+
+# Full tree up to current location
+curl "http://server:3923/folder/subfolder/?tree"
+```
+
+<ParamField query="tree" type="string">
+  Tree depth:
+  - `.` - One level of subdirectories
+  - (empty) - Full tree from root to current path
+</ParamField>
+
+## Thumbnails
+
+Get image/video thumbnails:
+
+```bash
+# Auto-sized thumbnail
+curl "http://server:3923/photo.jpg?th" -o thumb.jpg
+
+# Specific width
+curl "http://server:3923/photo.jpg?th=w256" -o thumb.jpg
+
+# Specific height  
+curl "http://server:3923/photo.jpg?th=h256" -o thumb.jpg
+```
+
+<ParamField query="th" type="string">
+  Thumbnail size:
+  - (empty) - Auto size
+  - `w{N}` - Width in pixels (e.g., `w256`)
+  - `h{N}` - Height in pixels (e.g., `h256`)
+</ParamField>
+
+### Audio Transcoding
+
+Transcode audio files:
+
+```bash
+# Transcode to Opus
+curl "http://server:3923/song.flac?th=opus" -o song.opus
+
+# Transcode to iOS-compatible CAF
+curl "http://server:3923/song.flac?th=caf" -o song.caf
+```
+
+<ParamField query="th" type="string">
+  Audio transcoding:
+  - `opus` - 128kbps Opus in WebM container
+  - `caf` - Opus in iOS CAF container
+  - `mp3` - MP3 format
+</ParamField>
+
+## Text File Streaming
+
+Stream growing log files:
+
+```bash
+# Stream from beginning
+curl "http://server:3923/app.log?tail"
+
+# Stream from byte 1024
+curl "http://server:3923/app.log?tail=1024"
+
+# Stream last 128 bytes
+curl "http://server:3923/app.log?tail=-128"
+```
+
+<ParamField query="tail" type="integer">
+  Stream file continuously:
+  - (empty) - Start from beginning
+  - Positive number - Start from byte offset
+  - Negative number - Start N bytes from end
+</ParamField>
+
+## View Text Files
+
+Get text files with specific encoding:
+
+```bash
+# Default UTF-8
+curl "http://server:3923/file.txt?txt"
+
+# Specific encoding
+curl "http://server:3923/file.txt?txt=iso-8859-1"
+```
+
+<ParamField query="txt" type="string" default="utf-8">
+  Text encoding (e.g., `iso-8859-1`, `cp1252`, `shift-jis`)
+</ParamField>
+
+## ZIP File Access
+
+Access files inside ZIP archives without extracting:
+
+```bash
+# List ZIP contents
+curl "http://server:3923/archive.zip?zls"
+
+# Extract specific file from ZIP
+curl "http://server:3923/archive.zip?zget=folder/file.txt"
+```
+
+<ParamField query="zls" type="boolean">
+  List contents of ZIP file
+</ParamField>
+
+<ParamField query="zget" type="string">
+  Extract and download specific file from ZIP
+</ParamField>
+
+## Markdown Rendering
+
+Render markdown files as HTML:
+
+```bash
+curl "http://server:3923/README.md?v"
+```
+
+<ParamField query="v" type="boolean">
+  Render markdown as HTML, or open media files in player
+</ParamField>
+
+## Media Player
+
+Open media in browser player:
+
+```bash
+# Open in audio/video player
+curl "http://server:3923/song.mp3?v"
+
+# Open in image gallery
+curl "http://server:3923/photo.jpg?v"
+```
+
+## MIME Type Override
+
+Force specific MIME type:
+
+```bash
+curl "http://server:3923/file.bin?mime=application/json"
+```
+
+<ParamField query="mime" type="string">
+  Override MIME type in response headers
+</ParamField>
+
+## Recent Uploads
+
+List recent uploads:
+
+```bash
+# Your uploads
+curl "http://server:3923/?ups"
+
+# All uploads (requires admin permission)
+curl "http://server:3923/?ru"
+
+# Filter by path
+curl "http://server:3923/?ru&filter=photos"
+
+# JSON format
+curl "http://server:3923/?ru&j"
+```
+
+<ParamField query="ups" type="boolean">
+  Show recent uploads from your IP
+</ParamField>
+
+<ParamField query="ru" type="boolean">
+  Show all recent uploads (requires admin permission)
+</ParamField>
+
+<ParamField query="filter" type="string">
+  Filter uploads by path substring
+</ParamField>
+
+## Shares
+
+List your shared files/folders:
+
+```bash
+curl "http://server:3923/?shares"
+```
+
+<ParamField query="shares" type="boolean">
+  List temporary share links you've created
+</ParamField>
+
+## Active Downloads
+
+View active downloads (admin only):
+
+```bash
+curl "http://server:3923/?dls"
+```
+
+<ParamField query="dls" type="boolean">
+  Show currently active downloads (requires admin permission)
+</ParamField>
+
+## Response Headers
+
+Common response headers:
+
+```http
+Content-Type: application/octet-stream
+Content-Length: 1048576
+Content-Disposition: inline; filename="file.txt"
+Last-Modified: Mon, 03 Mar 2024 12:00:00 GMT
+ETag: "abc123"
+Accept-Ranges: bytes
+```
+
+## Performance Notes
+
+<Tip>
+  - Use `?tar` instead of `?zip` for files > 4 GiB
+  - Plain `?tar` is fastest for large archives (no compression)
+  - `?tar=gz:3` is good balance of speed and compression
+  - Range requests support resumable downloads
+  - Streaming tar works with `curl | tar -xv` for extraction on-the-fly
+</Tip>
+
+<Warning>
+  - `?zip=crc` requires reading each file twice (slower)
+  - Dotfiles excluded from archives unless you have dot permission
+  - `up2k.db` and `dir.txt` always excluded from archives
+  - Audio transcoding requires FFmpeg on server
+</Warning>

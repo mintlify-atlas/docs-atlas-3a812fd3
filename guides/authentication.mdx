@@ -1,0 +1,708 @@
+---
+title: 'Authentication & SSO Setup'
+description: 'Configure user authentication, password management, and single sign-on integration'
+---
+
+## Overview
+
+copyparty supports multiple authentication methods:
+
+- **Basic authentication** - Built-in username/password accounts
+- **IP-based authentication** - Auto-login based on IP address/range  
+- **Identity providers (IdP)** - OAuth, LDAP, Active Directory, SAML
+- **Header-based authentication** - Integration with reverse proxy auth
+- **User-changeable passwords** - Let users manage their own passwords
+
+## Basic Authentication
+
+### Creating User Accounts
+
+<Steps>
+
+<Step title="Command-line accounts">
+  Create accounts with the `-a` flag:
+
+  ```bash
+  python copyparty-sfx.py \
+    -a alice:password123 \
+    -a bob:secret456 \
+    -v /mnt/share:/files:r,alice,bob
+  ```
+
+  Both users can access `/files` with their respective passwords.
+</Step>
+
+<Step title="Configuration file accounts">
+  For better security and management:
+
+  ```yaml accounts.conf
+  [accounts]
+    alice: password123
+    bob: secret456
+    admin: very-secret-admin-pass
+
+  [/files]
+    /mnt/share
+    accs:
+      r: alice, bob    # both can read
+      A: admin         # admin has full access
+  ```
+
+  Start with:
+  ```bash
+  python copyparty-sfx.py -c accounts.conf
+  ```
+</Step>
+
+<Step title="Require usernames">
+  By default, users can login with password only. Enable username requirement:
+
+  ```bash
+  python copyparty-sfx.py --usernames \
+    -a alice:password123 \
+    -v /mnt/share:/files:r,alice
+  ```
+
+  Users must now enter both username AND password.
+</Step>
+
+</Steps>
+
+### User Groups
+
+Organize users into groups for easier management:
+
+```yaml
+[accounts]
+  alice: pass1
+  bob: pass2
+  carol: pass3
+  admin: admin-pass
+
+[groups]
+  editors: alice, bob      # alice and bob are editors
+  admins: admin, carol     # admin and carol are admins
+
+[/documents]
+  /mnt/docs
+  accs:
+    r: @editors       # group access with @ prefix
+    A: @admins
+
+[/public]
+  /mnt/public
+  accs:
+    r: @acct          # special group: all logged-in users
+    w: @editors
+```
+
+### Password Hashing
+
+Store hashed passwords instead of plaintext:
+
+```bash
+# Generate password hash
+python copyparty-sfx.py --ah-cli secretpassword
+# Output: $2b$12$GX7m8KT4Z...
+```
+
+Use in config:
+```yaml
+[accounts]
+  alice: $2b$12$GX7m8KT4Z...  # hashed password
+  bob: password123              # plaintext still works
+```
+
+Or hash all passwords:
+```bash
+python copyparty-sfx.py --ah-alg 6 \
+  -a alice:password123 \
+  -v /mnt/share:/files:r,alice
+```
+
+- `--ah-alg 6` - Use bcrypt with cost factor 12
+- Passwords are auto-hashed on first use
+
+## User-Changeable Passwords
+
+Let users change their own passwords:
+
+```bash
+python copyparty-sfx.py --chpw \
+  -a alice:initial-pass \
+  -a bob:initial-pass \
+  -v /mnt/share:/files:r,alice,bob
+```
+
+- `--chpw` - Enable password changing
+- Users access via control-panel
+- New passwords stored in `chpw.json` by default
+
+Exclude specific accounts from changing passwords:
+
+```yaml
+[global]
+  chpw
+  chpw-no: admin,system  # these accounts cannot change passwords
+  chpw-db: /etc/copyparty/user-passwords.json  # custom location
+
+[accounts]
+  alice: pass1
+  bob: pass2
+  admin: admin-secret
+```
+
+## IP-Based Authentication
+
+### Auto-Login by IP Range
+
+Automatically log in users from specific networks:
+
+```bash
+python copyparty-sfx.py \
+  -a alice:password \
+  --ipu 192.168.1.0/24=alice \
+  -v /mnt/share:/files:r,alice
+```
+
+- Anyone from `192.168.1.0/24` auto-logs in as `alice`
+- No password prompt for those IPs
+
+Multiple IP ranges:
+
+```yaml
+[global]
+  ipu: 192.168.1.0/24=alice      # home network
+  ipu: 10.0.0.0/8=bob            # office network
+  ipu: 172.16.0.0/12=guest       # guest network
+
+[accounts]
+  alice: pass1
+  bob: pass2  
+  guest: guest-pass
+
+[/files]
+  /mnt/share
+  accs:
+    r: alice, bob, guest
+```
+
+### Restrict Users to IP Ranges
+
+Limit which IPs can use an account:
+
+```bash
+python copyparty-sfx.py \
+  -a remote-worker:password \
+  --ipr 203.0.113.0/24=remote-worker \
+  -v /mnt/share:/files:r,remote-worker
+```
+
+- User `remote-worker` can ONLY login from `203.0.113.0/24`
+- Connections from other IPs are rejected
+
+Configuration example:
+
+```yaml
+[global]
+  ipr: 192.168.1.0/24=internal-user       # only from LAN
+  ipr: 203.0.113.0/24,198.51.100.0/24=vpn-user  # multiple ranges
+
+[accounts]
+  internal-user: pass1
+  vpn-user: pass2
+  global-user: pass3   # no IP restriction
+```
+
+<Warning>
+  **Important**: If using a reverse proxy, ensure [real-ip detection](/deployment/reverse-proxy#client-ip-detection) is configured correctly! Otherwise, copyparty sees the proxy IP, not the client IP.
+
+  ```bash
+  python copyparty-sfx.py --xff-hdr x-forwarded-for \
+    --xff-src 172.16.0.0/12 \
+    --rproxy -1
+  ```
+</Warning>
+
+## Identity Provider (SSO) Integration
+
+### Overview
+
+Replace copyparty's built-in authentication with external identity providers:
+
+- **Authelia** - Config-file based IdP
+- **Authentik** - GUI-based IdP with advanced features
+- **Keycloak** - Enterprise SSO solution
+- **OAuth providers** - Google, GitHub, etc.
+- **LDAP / Active Directory**
+- **SAML providers**
+
+### How It Works
+
+1. User visits copyparty
+2. Reverse proxy redirects to IdP login
+3. User authenticates with IdP
+4. IdP sends username via HTTP header
+5. copyparty reads header and grants access
+
+### Basic IdP Setup
+
+Configure copyparty to trust a header:
+
+```yaml
+[global]
+  idp-h-usr: Remote-User        # header containing username
+  idp-login: /auth/login?next={dst}   # login URL
+  idp-logout: /auth/logout            # logout URL
+
+[accounts]
+  alice:   # no password needed - IdP handles auth
+  bob:
+  admin:
+
+[/files]
+  /mnt/share
+  accs:
+    r: alice, bob
+    A: admin
+```
+
+Start with:
+```bash
+python copyparty-sfx.py -c config.conf
+```
+
+### Authelia Integration
+
+Complete example with Authelia IdP:
+
+<Steps>
+
+<Step title="Install Authelia">
+  See [Authelia documentation](https://www.authelia.com/integration/prologue/get-started/) or use the [docker-compose example](https://github.com/9001/copyparty/tree/hovudstraum/docs/examples/docker/idp-authelia-traefik).
+</Step>
+
+<Step title="Configure Authelia">
+  In `authelia-config.yml`:
+
+  ```yaml
+  access_control:
+    default_policy: deny
+    rules:
+      - domain: files.example.com
+        policy: one_factor
+        subject:
+          - "user:alice"
+          - "user:bob"
+  ```
+</Step>
+
+<Step title="Configure copyparty">
+  ```yaml copyparty.conf
+  [global]
+    idp-h-usr: Remote-User
+    idp-login: https://auth.example.com/?rd={dst}
+    idp-logout: https://auth.example.com/logout
+
+  [accounts]
+    alice:
+    bob:
+
+  [/files]
+    /mnt/share
+    accs:
+      r: alice, bob
+  ```
+</Step>
+
+<Step title="Configure reverse proxy">
+  Nginx example:
+
+  ```nginx
+  location / {
+      proxy_pass http://copyparty:3923;
+      proxy_set_header Remote-User $remote_user;
+      
+      # Authelia auth request
+      auth_request /auth;
+      auth_request_set $remote_user $upstream_http_remote_user;
+  }
+
+  location /auth {
+      internal;
+      proxy_pass http://authelia:9091/api/verify;
+  }
+  ```
+</Step>
+
+</Steps>
+
+### Generic Header Authentication
+
+Map any header to copyparty users:
+
+```yaml
+[global]
+  # Tailscale example
+  idp-hm-usr: ^Tailscale-User-Login^alice@example.com^alice
+  idp-hm-usr: ^Tailscale-User-Login^bob@example.com^bob
+
+  # Custom header example  
+  idp-hm-usr: ^X-Auth-Username^external-alice^alice
+
+[accounts]
+  alice:
+  bob:
+```
+
+Format: `^HeaderName^HeaderValue^CopypartyUsername`
+
+### Authentication Precedence
+
+Control which auth method takes priority:
+
+```yaml
+[global]
+  idp-h-usr: Remote-User
+  auth-ord: idp,pwd    # try IdP first, then password
+  # auth-ord: pwd,idp  # try password first, then IdP
+```
+
+Use cases:
+- `idp,pwd` - Normal operation, with password fallback
+- `pwd,idp` - Let admin override IdP with password
+
+## WebDAV Authentication
+
+WebDAV clients often struggle with IdP authentication.
+
+### Password-Based WebDAV
+
+Force password auth for WebDAV:
+
+```yaml
+[global]
+  idp-h-usr: Remote-User    # IdP for web UI
+  dav-auth                  # force password for WebDAV
+
+[accounts]
+  alice: webdav-password    # password required for WebDAV
+```
+
+Users access WebDAV with `alice:webdav-password`, but web UI uses IdP.
+
+### Separate WebDAV Port
+
+Run WebDAV on a different port without IdP:
+
+```yaml
+[global]
+  dav-port: 3980            # WebDAV on port 3980 (no IdP)
+  
+[accounts]
+  alice: dav-password
+
+[/files]
+  /mnt/share
+  accs:
+    rw: alice
+```
+
+Configure reverse proxy to:
+- Port 3923: Web UI with IdP auth
+- Port 3980: WebDAV with password auth (no IdP)
+
+## Session Management
+
+### Session Cookies
+
+Reduce IdP load with session cookies:
+
+```yaml
+[global]
+  idp-h-usr: Remote-User
+  idp-cookie                # enable session cookies
+```
+
+After first login:
+- copyparty sets a `cppws` cookie
+- Future requests skip IdP validation
+- Cookie expires after 24 hours (default)
+
+### Session Timeout
+
+```yaml
+[global]
+  idp-cookie
+  # No built-in session timeout yet
+  # Cookie expires on browser close or after 24h
+```
+
+## Advanced Authentication Patterns
+
+### Public Read, Authenticated Write
+
+```yaml
+[accounts]
+  uploader: secure-password
+
+[/downloads]
+  /mnt/public
+  accs:
+    r: *              # anyone can read
+    
+[/uploads]  
+  /mnt/uploads
+  accs:
+    w: uploader       # only authenticated users can write
+```
+
+### Multiple Auth Levels
+
+```yaml
+[accounts]
+  viewer: view-pass
+  editor: edit-pass
+  admin: admin-pass
+
+[groups]
+  staff: viewer, editor, admin
+
+[/public]
+  /mnt/public
+  accs:
+    r: *              # anyone
+
+[/docs]
+  /mnt/docs  
+  accs:
+    r: @staff         # all staff can read
+    rw: editor, admin # editor and admin can write
+
+[/admin]
+  /mnt/admin
+  accs:
+    A: admin          # admin only
+```
+
+### Temporary Access
+
+Use the shares feature for temporary authenticated access:
+
+```yaml
+[global]
+  shr: /share              # enable shares
+  shr-adm: admin          # admin can manage all shares
+
+[accounts]
+  admin: admin-secret
+
+[/files]
+  /mnt/files
+  accs:
+    A: admin
+```
+
+Admin creates shares with:
+- Custom expiration time
+- Optional password
+- Access to specific files/folders
+
+Shares bypass normal authentication.
+
+## Ban and Rate Limiting
+
+### Failed Login Protection
+
+```bash
+python copyparty-sfx.py \
+  --ban-pw 5,3600,86400 \
+  -a alice:password \
+  -v /mnt/share:/files:r,alice
+```
+
+- `5` failed attempts
+- In `3600` seconds (1 hour)
+- Results in `86400` second ban (24 hours)
+
+Configuration:
+```yaml
+[global]
+  ban-pw: 5,3600,86400     # password fails
+  ban-404: 20,60,600       # 404 spam protection
+```
+
+### Whitelist IPs from Bans
+
+```yaml
+[global]
+  ban-pw: 9,3600,86400
+  # Exempt trusted IPs (via xff-src for reverse proxy)
+  xff-src: 172.16.0.0/12   # trust reverse proxy
+  # These IPs won't be banned
+```
+
+## Complete SSO Example
+
+```yaml complete-sso.conf
+[global]
+  # IdP configuration
+  idp-h-usr: Remote-User
+  idp-login: https://auth.example.com/login?rd={dst}
+  idp-logout: https://auth.example.com/logout
+  idp-cookie                     # enable session cookies
+  
+  # Reverse proxy configuration  
+  xff-hdr: x-forwarded-for
+  xff-src: 172.16.0.0/12
+  rproxy: -1
+  
+  # Security
+  ban-pw: 5,3600,86400
+  
+  # WebDAV compatibility
+  dav-auth                       # force password for WebDAV
+
+[accounts]
+  alice:                         # IdP handles auth (no password)
+  bob:
+  admin: emergency-password      # emergency fallback password
+
+[groups]
+  users: alice, bob
+  admins: admin
+
+[/files]
+  /mnt/shared
+  accs:
+    r: @users
+    A: @admins
+
+[/admin]
+  /mnt/admin
+  accs:
+    A: @admins
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Users getting 'thank you for playing' message">
+    This means they're banned for suspicious activity.
+
+    Solutions:
+    1. Check ban settings: `--ban-pw`, `--ban-404`
+    2. Configure real-IP detection: `--xff-hdr`, `--xff-src`
+    3. Whitelist trusted IPs
+    4. Check server logs for ban reason
+
+    Temporary fix:
+    ```bash
+    python copyparty-sfx.py --ban-pw 0 --ban-404 0  # disable bans
+    ```
+  </Accordion>
+
+  <Accordion title="IdP authentication not working">
+    Check these:
+
+    1. Header name matches: `idp-h-usr: Remote-User`
+    2. Reverse proxy sends header: check nginx/apache config
+    3. Real-IP configured: `--xff-hdr`, `--rproxy`
+    4. Account exists in copyparty config
+    5. Check server logs for header values
+
+    Debug:
+    ```yaml
+    [global]
+      log-fk: 4   # enable verbose logging
+    ```
+  </Accordion>
+
+  <Accordion title="WebDAV clients can't connect">
+    WebDAV often incompatible with IdP.
+
+    Solutions:
+    1. Enable password auth: `dav-auth`
+    2. Use separate port: `dav-port: 3980`  
+    3. Set account password: `alice: webdav-pass`
+    4. Check user-agent: some need `og_ua` configured
+  </Accordion>
+
+  <Accordion title="Password changes not saving">
+    Check:
+
+    1. `--chpw` enabled
+    2. Write permission on `chpw-db` file (default `chpw.json`)
+    3. Account not in `chpw-no` list
+    4. Not using IdP (incompatible with `--chpw`)
+  </Accordion>
+
+  <Accordion title="IP authentication not working">
+    Reverse proxy issues:
+
+    1. Configure real-IP: `--xff-hdr x-forwarded-for`
+    2. Trust proxy: `--xff-src 172.16.0.0/12`
+    3. Set rproxy mode: `--rproxy -1`
+    4. Check server logs for detected IP
+
+    Test without proxy first to verify config.
+  </Accordion>
+</AccordionGroup>
+
+## Security Best Practices
+
+<Card title="Use HTTPS" icon="lock">
+  Always use HTTPS in production:
+
+  ```bash
+  python copyparty-sfx.py --https 3923 -c config.conf
+  ```
+
+  Or use a reverse proxy with TLS.
+</Card>
+
+<Card title="Hash Passwords" icon="key">
+  Never store plaintext passwords:
+
+  ```yaml
+  [global]
+    ah-alg: 6    # bcrypt hashing
+  ```
+</Card>
+
+<Card title="Rate Limiting" icon="shield-check">
+  Enable ban protection:
+
+  ```yaml
+  [global]
+    ban-pw: 5,3600,86400
+    ban-404: 20,60,600
+  ```
+</Card>
+
+<Card title="Least Privilege" icon="user-lock">
+  Grant minimum required permissions:
+
+  ```yaml
+  accs:
+    r: viewer      # read-only
+    # NOT: A: viewer  # don't give admin unnecessarily
+  ```
+</Card>
+
+<Card title="Monitor Access" icon="eye">
+  Enable logging and monitoring:
+
+  ```yaml
+  [global]
+    lo: log/cpp-%Y-%m%d.txt.xz    # compressed logs
+    stats                          # prometheus metrics
+  ```
+</Card>
+
+## Next Steps
+
+- Set up [file sharing](/guides/file-sharing) with authenticated users
+- Configure [write-only folders](/guides/write-only-folders) for submissions
+- Enable [deduplication](/guides/deduplication) to track uploaders
+- Create a [media server](/guides/media-server) with access control

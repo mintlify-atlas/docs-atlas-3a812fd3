@@ -1,0 +1,459 @@
+---
+title: 'Thumbnails'
+description: 'Image, video, and audio thumbnail generation with caching'
+---
+
+## Overview
+
+copyparty generates thumbnails for images, videos, and audio files (spectrograms/waveforms). Thumbnails are cached for performance and can be customized per-volume.
+
+## Thumbnail Generation
+
+### Backend Options
+
+<Tabs>
+  <Tab title="Pillow (Recommended)">
+    ```bash
+    pip install Pillow
+    ```
+    
+    **Features:**
+    - Image thumbnails (JPG, PNG, GIF, WebP, BMP, TIFF)
+    - Fast performance
+    - Low memory usage
+    - WebP output support (if Pillow compiled with it)
+    
+    **Speed:** ⭐⭐⭐⭐ (baseline)
+  </Tab>
+  
+  <Tab title="pyvips (Fastest)">
+    ```bash
+    pip install pyvips
+    ```
+    
+    **Features:**
+    - 3x faster than Pillow
+    - Lower memory usage for large images
+    - Better RAW format support
+    - HEIF/HEIC support (if libvips compiled with it)
+    
+    **Speed:** ⭐⭐⭐⭐⭐ (3x faster than Pillow)
+    
+    <Note>
+    May use more RAM than Pillow for the thumbnail cache.
+    </Note>
+  </Tab>
+  
+  <Tab title="FFmpeg">
+    ```bash
+    # Debian/Ubuntu
+    apt install ffmpeg
+    
+    # macOS
+    brew install ffmpeg
+    ```
+    
+    **Features:**
+    - Video thumbnails
+    - Audio spectrograms/waveforms  
+    - Image thumbnails (fallback)
+    - Widest format support
+    
+    **Speed:** ⭐⭐ (3x slower than Pillow for images)
+    
+    <Warning>
+    **Security consideration:** FFmpeg processes arbitrary files and may have vulnerabilities. Use `--no-thumb` on untrusted uploads.
+    </Warning>
+  </Tab>
+</Tabs>
+
+### Supported Formats
+
+**Images:**
+- JPG, PNG, GIF, WebP, BMP, TIFF, ICO
+- RAW formats (with pyvips + rawpy): CR2, NEF, ARW, DNG, etc.
+- HEIF/HEIC (with pyvips on supported systems)
+
+**Video:**
+- MP4, WebM, MKV, AVI, MOV, FLV, MPG, MPEG, M4V, 3GP, WMV
+- Requires FFmpeg
+
+**Audio:**
+- Spectrograms or waveforms for all audio formats
+- Requires FFmpeg
+
+<Note>
+**Legal restrictions:** Docker images and some builds cannot support HEIF/HEIC images or H.265/HEVC video due to patent licensing. See [bad-codecs.md](https://github.com/9001/copyparty/blob/hovudstraum/docs/bad-codecs.md).
+</Note>
+
+## Configuration
+
+### Global Settings
+
+```bash
+# Disable all thumbnails
+copyparty --no-thumb
+
+# Disable only video thumbnails
+copyparty --no-vthumb
+
+# Disable audio spectrograms  
+copyparty --no-athumb
+
+# Custom thumbnail resolution
+copyparty --th-size 400x400
+
+# Thumbnail quality (10-90)
+copyparty --th-q 85
+```
+
+### Per-Volume Configuration
+
+```yaml
+[/public]
+  /srv/public
+  flags:
+    dthumb      # disable ALL thumbnails
+    
+[/videos]  
+  /srv/videos
+  flags:
+    dvthumb     # disable video thumbnails only
+    dathumb     # disable audio spectrograms
+    dithumb     # disable image thumbnails
+    
+[/photos]
+  /srv/photos
+  flags:
+    thsize: 800x600    # custom resolution
+    th_qv: 90          # WebP/JPG quality
+    th_qvx: 85         # JXL quality
+```
+
+## Thumbnail Types
+
+### Image Thumbnails
+
+Generated using Pillow, pyvips, or FFmpeg (in that priority order).
+
+**Format priority:**
+1. WebP (if supported and `--th-webp`)
+2. JPEG (default)
+3. PNG (for transparency)
+
+```bash
+# Force WebP thumbnails
+copyparty --th-webp
+
+# JPEG-XL thumbnails (future format)
+copyparty --th-jxl
+```
+
+### Video Thumbnails
+
+Extracted from video files using FFmpeg.
+
+```bash
+# Disable video thumbnails (security/performance)
+copyparty --no-vthumb
+
+# Fix issues on some FFmpeg versions (macOS, some Linux)
+copyparty --th-ff-jpg
+```
+
+**Performance:**
+- First frame extraction is usually fast
+- Large/long videos may take time
+- Thumbnails cached after first generation
+
+### Audio Spectrograms
+
+Generated using FFmpeg showing frequency spectrum over time.
+
+<Tabs>
+  <Tab title="Spectrogram">
+    Default audio thumbnail - shows frequency content.
+    
+    ```bash
+    copyparty  # spectrograms by default
+    ```
+    
+    Useful for:
+    - Identifying songs visually
+    - Seeing audio quality/bitrate
+    - Detecting silence/clipping
+  </Tab>
+  
+  <Tab title="Waveform">
+    Shows amplitude over time.
+    
+    ```bash
+    copyparty --th-no-crop
+    ```
+    
+    Or via URL parameter: `?p` for PNG waveforms
+  </Tab>
+</Tabs>
+
+```bash
+# Disable audio thumbnails
+copyparty --no-athumb
+
+# Fix spectrogram issues on some FFmpeg versions
+copyparty --th-ff-swr
+
+# Compress waveforms better (requires pngquant)
+copyparty -v /music::r:c,pngquant
+```
+
+## Folder Thumbnails
+
+copyparty automatically selects folder thumbnails based on file naming:
+
+### Default Cover Names
+
+1. `folder.png` / `folder.jpg`
+2. `cover.png` / `cover.jpg`
+3. `.folder.png` / `.folder.jpg` (dotfiles)
+4. First image in folder (with `-e2dsa`)
+5. Embedded album art from audio files (with `-e2dsa -e2ts`)
+
+### Custom Cover Names
+
+```bash
+copyparty --th-covers folder.jpg,albumart.png,front.jpg
+```
+
+```yaml
+flags:
+  th_covers: folder.jpg,cover.jpg,albumart.png
+```
+
+## Custom Thumbnails by Extension
+
+Assign specific icons/images to file extensions:
+
+```bash
+copyparty --ext-th exe=/icons/exe.png --ext-th pdf=/icons/pdf.svg
+```
+
+```yaml
+[/downloads]
+  /srv/downloads
+  flags:
+    ext_th: exe=/icons/exe.png
+    ext_th: pdf=/icons/pdf.svg
+    ext_th: iso=/icons/disc.webp
+```
+
+**Supported formats:** JPG, PNG, GIF, WebP, ICO
+
+<Warning>
+**SVG limitation:** Chrome crashes with 250+ unique SVG files on one page. Reusing the same SVG thousands of times is fine.
+</Warning>
+
+## Thumbnail Cache
+
+### Storage Location
+
+Thumbnails stored in `.hist/` subdirectory:
+
+```yaml
+[global]
+  hist: /fast/ssd/thumbs  # put cache on SSD
+  
+[/photos]
+  /slow/nas/photos
+  flags:
+    hist: -               # use volume's .hist/ instead
+```
+
+<Tip>
+Putting thumbnail cache on an SSD dramatically improves gallery browsing performance.
+</Tip>
+
+### Cache Management
+
+```bash
+# Delete thumbnails older than 30 days
+copyparty --th-maxage 2592000
+
+# Never clean thumbnails
+copyparty --th-clean 0
+
+# Manual cleanup interval (seconds)
+copyparty --th-clean 86400
+```
+
+```yaml
+[global]
+  th-maxage: 2592000  # 30 days in seconds
+  th-clean: 86400     # check daily
+```
+
+### Pregenerate Thumbnails
+
+Generate thumbnails in advance:
+
+```bash
+# Download folder as tar with thumbnails/spectrograms
+curl 'http://localhost:3923/music/?tar&j' > /dev/null
+
+# For images -> JPEG thumbnails
+curl 'http://localhost:3923/photos/?tar&w' > /dev/null
+
+# For images -> WebP thumbnails  
+curl 'http://localhost:3923/photos/?tar&j' > /dev/null
+```
+
+Combine with `--th-maxage=9999999` or `--th-clean=0` to keep forever.
+
+## Grid View
+
+Press `g` or click `田` to toggle grid view (thumbnail gallery).
+
+### Grid Features
+
+- Multiselect mode (click to select multiple)
+- Zoom with `Shift+A/D`
+- Click thumbnails to open viewer
+- Right-click for context menu
+
+### Enable by Default
+
+```bash
+copyparty --grid
+```
+
+```yaml
+[/photos]
+  /srv/photos
+  flags:
+    grid   # default to grid view
+    gsel   # better selection mode for desktop
+```
+
+Or via URL: `?imgs` to enable, `?imgs=0` to disable
+
+## Performance Tuning
+
+### Thumbnail Resolution
+
+```bash
+# Smaller = faster generation, less bandwidth, lower quality
+copyparty --th-size 300x300
+
+# Larger = slower generation, more bandwidth, better quality
+copyparty --th-size 600x600
+```
+
+### Quality Settings
+
+```bash
+# Lower quality = smaller files, faster transfer
+copyparty --th-q 70
+
+# Higher quality = larger files, better appearance
+copyparty --th-q 95
+```
+
+### Backend Selection
+
+```bash
+# Force specific backend
+copyparty --th-pil      # use Pillow only
+copyparty --th-vips     # use pyvips only
+copyparty --th-ff       # use FFmpeg only
+```
+
+## Troubleshooting
+
+### Broken Thumbnails
+
+**Colorful square with filetype:**
+- FFmpeg or Pillow not installed
+- Install with: `apt install ffmpeg python3-pillow`
+
+**Blank box or broken image:**
+- Reverse proxy stripping `?th=w` query parameters
+- CDN/proxy ignoring query strings in cache
+- Privacy browser extensions blocking requests
+
+**iPhone/Video thumbnails broken:**
+- HEIF/HEIC or H.265/HEVC not supported in your build
+- Legal restrictions in Docker images
+- See [bad-codecs.md](https://github.com/9001/copyparty/blob/hovudstraum/docs/bad-codecs.md)
+
+### Fix Video Thumbnails
+
+```bash
+# Try these flags if video thumbnails broken
+copyparty --th-ff-jpg
+copyparty --th-ff-swr
+```
+
+### Fix RAW Images
+
+```bash
+# Install rawpy for RAW format support
+pip install rawpy
+
+# Or use FFmpeg
+apt install ffmpeg
+```
+
+## Security Considerations
+
+<Warning>
+**Untrusted uploads:** Thumbnail generation processes potentially malicious files. Consider:
+- `--no-thumb` to disable all thumbnails
+- `--no-vthumb` to disable video processing only
+- Running in a sandbox ([prisonparty](https://github.com/9001/copyparty/blob/hovudstraum/bin/prisonparty.sh))
+</Warning>
+
+## Example Configurations
+
+### Photo Gallery
+
+```yaml
+[global]
+  th-size: 600x600
+  th-webp
+  th-q: 85
+  th-maxage: 7776000  # 90 days
+  hist: /fast/ssd/cache
+  
+[/photos]
+  /mnt/nas/photos
+  accs:
+    r: *
+  flags:
+    grid              # default to grid view
+    gsel              # better selection
+    th_covers: folder.jpg,cover.jpg
+```
+
+### Video Library  
+
+```yaml
+[/videos]
+  /mnt/videos
+  accs:
+    r: family
+  flags:
+    dvthumb           # disable video thumbs (performance)
+    ext_th: mkv=/icons/mkv.png
+    ext_th: mp4=/icons/mp4.png
+```
+
+### High Security
+
+```yaml
+[/uploads]
+  /srv/uploads
+  accs:
+    w: *
+  flags:
+    dthumb            # no thumbnail generation
+    nosub             # flat structure only
+```

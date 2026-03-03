@@ -1,0 +1,382 @@
+---
+title: 'Server Protocols'
+description: 'HTTP, WebDAV, FTP, SFTP, TFTP, and SMB server support'
+---
+
+## Overview
+
+copyparty is a multi-protocol file server supporting HTTP(S), WebDAV, FTP/FTPS, SFTP, TFTP, and SMB/CIFS. Each protocol serves different use cases and client compatibility needs.
+
+## HTTP/HTTPS
+
+The primary protocol for web browser access and the REST API.
+
+### Basic Configuration
+
+```bash
+# Listen on default port 3923
+copyparty
+
+# Listen on custom port
+copyparty -p 8080
+
+# Listen on multiple ports
+copyparty -p 80,443
+
+# IPv4 only
+copyparty -i 0.0.0.0
+
+# Specific interface
+copyparty -i 192.168.1.100
+```
+
+### HTTPS/TLS
+
+```bash
+# Enable HTTPS with certificate
+copyparty -p 443 --https-cert /path/to/cert.pem --https-key /path/to/key.pem
+
+# Accept both HTTP and HTTPS
+copyparty -p 80,443 --https-cert cert.pem --https-key key.pem
+```
+
+<Note>
+For production deployments, consider using a reverse proxy (nginx, Caddy) to handle HTTPS and obtain certificates automatically via Let's Encrypt.
+</Note>
+
+## WebDAV
+
+Mount copyparty as a network drive in your file explorer.
+
+### Features
+
+- Read/write support
+- Compatible with Windows XP+, macOS, Linux (Nautilus/GVFS)
+- Works with mobile WebDAV clients
+
+### Connecting from Different OSs
+
+<Tabs>
+  <Tab title="Windows">
+    **GUI Method:**
+    
+    1. Right-click "My Computer" → "Map network drive"
+    2. Folder: `http://192.168.1.100:3923/`
+    3. Username: your password (password field can be empty)
+    
+    **Command Line:**
+    ```cmd
+    net use Z: http://192.168.1.100:3923/ /user:password
+    ```
+    
+    <Warning>
+    Windows has several WebDAV bugs:
+    - Doesn't send password on reauthentication (workaround: put password in username field)
+    - Can't access folders with forbidden characters (`<>:"/\|?*`) or ending with `.`
+    - May open new TCP connection per file and forget to close them
+    </Warning>
+  </Tab>
+  
+  <Tab title="macOS">
+    **Finder Method:**
+    
+    1. Go → Connect to Server (⌘K)
+    2. Server Address: `http://192.168.1.100:3923/`
+    3. Click Connect
+    4. Username: password, Password: anything
+    
+    **Command Line:**
+    ```bash
+    mount_webdav http://192.168.1.100:3923/ /Volumes/copyparty
+    ```
+  </Tab>
+  
+  <Tab title="Linux">
+    **Nautilus/GVFS:**
+    
+    1. File → Connect to Server
+    2. Type: WebDAV (HTTP)
+    3. Server: 192.168.1.100
+    4. Port: 3923
+    5. Username: password (or actual username if `--usernames` enabled)
+    
+    **Command Line (davfs2):**
+    ```bash
+    sudo mount -t davfs http://192.168.1.100:3923/ /mnt/copyparty
+    ```
+    
+    **rclone:**
+    ```bash
+    rclone mount copyparty: /mnt/copyparty
+    ```
+  </Tab>
+</Tabs>
+
+### WebDAV Configuration
+
+```yaml
+[global]
+  # Force auth for all WebDAV requests (fixes Windows anonymous-read bug)
+  dav-auth
+  
+  # Separate port for WebDAV with different write semantics
+  dav-port: 3924
+  
+  # Allow editing existing files (needed by some clients)
+  daw
+```
+
+<Warning>
+Enabling `daw` makes all PUT uploads overwrite existing files if the user has delete access. Use with caution or configure `dav-port` instead.
+</Warning>
+
+## FTP/FTPS
+
+FTP server for legacy clients and high-speed transfers.
+
+### Configuration
+
+```bash
+# FTP on port 3921
+copyparty --ftp 3921
+
+# FTPS (explicit TLS) on port 3990
+copyparty --ftps 3990
+
+# Both FTP and FTPS
+copyparty --ftp 3921 --ftps 3990
+
+# Passive mode port range (required for firewalls)
+copyparty --ftp 3921 --ftp-pr 12000-12099
+```
+
+### Config File Example
+
+```yaml
+[global]
+  ftp: 3921
+  ftps: 3990
+  ftp-pr: 12000-12099  # passive mode port range
+```
+
+### Firewall Rules
+
+```bash
+# Open FTP ports
+firewall-cmd --permanent --add-port=3921/tcp
+firewall-cmd --permanent --add-port=3990/tcp
+firewall-cmd --permanent --add-port=12000-12099/tcp
+firewall-cmd --reload
+```
+
+### Authentication
+
+- Login with **any username** + your password
+- Or put password in username field (password can be empty)
+- Unless `--usernames` is enabled (then both required)
+
+### Recommended Clients
+
+- WinSCP (Windows) - [winscp.net](https://winscp.net/)
+- FileZilla (cross-platform) - [filezilla-project.org](https://filezilla-project.org/)
+- lftp (Linux command-line)
+- rclone (cross-platform, scriptable)
+
+### Performance Notes
+
+- Faster than WebDAV in many cases
+- No resumable uploads (delete and restart if needed)
+- Active mode by default (use `--ftp-pr` for passive mode)
+
+## SFTP (SSH File Transfer)
+
+SSH-based file transfer, more secure than FTP.
+
+<Note>
+This is **not** FTPS (FTP-TLS). SFTP uses SSH protocol and SSH keys for authentication.
+</Note>
+
+### Requirements
+
+```bash
+# Install paramiko dependency
+pip install paramiko
+
+# Or use Docker image: ac, im, iv, or dj variants
+```
+
+### Configuration
+
+```bash
+# Enable SFTP on port 3922
+copyparty --sftp 3922
+
+# Allow password authentication
+copyparty --sftp 3922 --sftp-pw
+
+# Add SSH key for user
+copyparty --sftp 3922 --sftp-key 'david ssh-ed25519 AAAAC3NzaC...'
+
+# Anonymous access (no password)
+copyparty --sftp 3922 --sftp-anon guest
+```
+
+### Config File Example
+
+```yaml
+[global]
+  sftp: 3922
+  sftp-pw  # enable password login
+  sftp-key: david ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAbcd...
+  sftp-key: alice ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC...
+```
+
+### Performance
+
+- Roughly 700 MiB/s throughput
+- Slower than WebDAV and FTP
+- Better security with key-based auth
+
+## TFTP (Trivial FTP)
+
+Ultra-simple protocol for hardware and embedded devices.
+
+```bash
+# Enable TFTP on port 3969
+copyparty --tftp 3969
+
+# Use standard port 69 (requires root or capabilities)
+sudo copyparty --tftp 69
+
+# Or use NAT redirection
+iptables -t nat -A PREROUTING -i eth0 -p udp --dport 69 -j REDIRECT --to-port 3969
+```
+
+### Features & Limitations
+
+- ✅ Read and write support
+- ✅ Binary/octet transfer mode
+- ❌ No authentication (uses filesystem permissions)
+- ❌ No RFC 7440 (very slow over WAN)
+- ❌ No netascii mode
+
+### Expected Speeds
+
+- 100BASE-T: ~1100 KiB/s
+- WiFi (good): ~400-500 KiB/s
+- WiFi (bad): ~200 KiB/s
+
+### Usage Examples
+
+```bash
+# curl (read)
+curl --tftp-blksize 1428 tftp://192.168.1.100:3969/firmware.bin -o firmware.bin
+
+# curl (write)
+curl --tftp-blksize 1428 -T firmware.bin tftp://192.168.1.100:3969/
+
+# atftp (Linux)
+atftp --option "blksize 1428" 192.168.1.100 3969 -p -l firmware.bin -r firmware.bin
+
+# Windows built-in client
+tftp -i 192.168.1.100 put firmware.bin
+```
+
+<Tip>
+TFTP is perfect for updating firmware on routers, switches, IP phones, and other network hardware from the 90s.
+</Tip>
+
+## SMB/CIFS (Windows File Sharing)
+
+Windows network file sharing protocol.
+
+<Warning>
+SMB support is:
+- Not fully integrated with VFS (potential security issues)
+- Slow (5x slower than WebDAV, 30x slower than rclone-webdav)
+- Not recommended for WAN use
+- Not compatible with password hashing or `--usernames`
+
+Use with `--smb-port` and [prisonparty](https://github.com/9001/copyparty/blob/hovudstraum/bin/prisonparty.sh) for security.
+</Warning>
+
+### Requirements
+
+```bash
+pip install "impacket==0.13.0"
+```
+
+### Configuration
+
+```bash
+# Read-only SMB
+copyparty --smb
+
+# Read-write SMB  
+copyparty --smbw
+
+# Non-privileged port (recommended)
+copyparty --smb --smb-port 3945
+
+# Then use NAT on Linux
+iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 445 -j REDIRECT --to-port 3945
+```
+
+### Known Issues
+
+- Only shows first ~400 files in large folders
+- Login doesn't work on Windows XP
+- Windows 10+ doesn't allow anonymous connections
+- Slow compared to WebDAV
+- Python 3 only
+
+### Authentication
+
+- Username: `$password`, Password: `k`
+- Or Username: `$username`, Password: `$password`
+
+## Protocol Comparison
+
+| Protocol | Speed | Security | Compatibility | Resumable | Auth |
+|----------|-------|----------|---------------|-----------|------|
+| HTTP     | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ✅ | ✅ |
+| WebDAV   | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ❌ | ✅ |
+| FTP      | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐ | ❌ | ✅ |
+| FTPS     | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ | ❌ | ✅ |
+| SFTP     | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ❌ | ✅ |
+| TFTP     | ⭐⭐ | ⭐ | ⭐⭐⭐ | ❌ | ❌ |
+| SMB      | ⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ | ❌ | ⭐ |
+
+## Multi-Protocol Example
+
+Enable all protocols with proper configuration:
+
+```yaml
+[global]
+  # HTTP/HTTPS
+  port: 3923,443
+  https-cert: /etc/copyparty/cert.pem
+  https-key: /etc/copyparty/key.pem
+  
+  # WebDAV
+  dav-auth
+  
+  # FTP/FTPS
+  ftp: 3921
+  ftps: 3990  
+  ftp-pr: 12000-12099
+  
+  # SFTP
+  sftp: 3922
+  sftp-pw
+  
+  # TFTP
+  tftp: 3969
+  
+  # Zeroconf announcement
+  z  # announce all services on LAN
+```
+
+<Tip>
+Use `-z` to announce all enabled services via mDNS and SSDP, making them automatically discoverable on your LAN.
+</Tip>

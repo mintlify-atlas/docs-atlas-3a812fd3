@@ -1,0 +1,288 @@
+---
+title: Accounts and Volumes
+description: Configure user accounts, volume mapping, and per-folder permissions in copyparty
+---
+
+Per-folder, per-user permissions. If your setup is getting complex, consider making a [config file](/config/server-setup#configuration-files) instead of using command-line arguments.
+
+<Note>
+Changes to the config file can be applied at runtime with `systemctl reload copyparty` or the `[reload cfg]` button in the control-panel (if the user has `a`/admin permission in any volume).
+
+Changes to the `[global]` config section require a restart to take effect.
+</Note>
+
+## Quick Summary
+
+A quick summary can be seen using [`--help-accounts`](https://copyparty.eu/cli/#accounts-help-page)
+
+## Creating Accounts
+
+Configuring accounts/volumes with command-line arguments:
+
+<CodeGroup>
+```bash Command Line
+# Add account with username and password
+-a usr:pwd
+
+# Add multiple accounts
+-a u1:p1 -a u2:p2 -a u3:p3
+```
+
+```yaml Config File
+[accounts]
+  u1: p1  # create account "u1" with password "p1"
+  u2: p2  #  (note that comments must have
+  u3: p3  #   two spaces before the # sign)
+```
+</CodeGroup>
+
+## Creating Volumes
+
+Volumes map server filesystem paths to URL paths with specific permissions.
+
+### Command-Line Syntax
+
+The syntax is: `-v src:dst:perm:perm:...`
+- **src**: Local path on the server
+- **dst**: URL path in the web interface
+- **perm**: One or more permissions to set
+
+### Basic Examples
+
+<CodeGroup>
+```bash Command Line
+# Share current folder as webroot, readable by anyone
+-v .::r
+
+# Share /srv as webroot, read-only for everyone
+-v /srv::r
+
+# Share /mnt/music at /music URL, read-only for everyone
+-v /mnt/music:music:r
+
+# Multiple permissions for different users
+# u1/u2 read-only, u3 read-write
+-v .::r,u1,u2:rw,u3
+```
+
+```yaml Config File
+[/]     # this URL will be mapped to...
+  /srv  # ...this folder on the server filesystem
+  accs:
+    r: *  # read-only for everyone, no account necessary
+
+[/music]       # create another volume at this URL,
+  /mnt/music   # which is mapped to this folder
+  accs:
+    r: u1, u2  # only these accounts can read
+    rw: u3     # and only u3 can read-write
+```
+</CodeGroup>
+
+## Permission Types
+
+<ParamField path="r" type="read">
+  Browse folder contents, download files, download as zip/tar, see filekeys/dirkeys
+</ParamField>
+
+<ParamField path="w" type="write">
+  Upload files, move/copy files *into* this folder (requires `r` to see the uploads)
+</ParamField>
+
+<ParamField path="m" type="move">
+  Move files/folders *from* this folder (requires `w` at destination)
+</ParamField>
+
+<ParamField path="d" type="delete">
+  Permanently delete files and folders
+</ParamField>
+
+<ParamField path="." type="dots">
+  User can ask to show dotfiles in directory listings
+</ParamField>
+
+<ParamField path="g" type="get">
+  Only download files, cannot see folder contents or zip/tar
+</ParamField>
+
+<ParamField path="G" type="upget">
+  Same as `g` except uploaders get to see their own [filekeys](/config/volflags#filekeys-and-dirkeys)
+</ParamField>
+
+<ParamField path="h" type="html">
+  Same as `g` except folders return their index.html, and filekeys are not necessary for index.html
+</ParamField>
+
+<ParamField path="a" type="admin">
+  Can see upload time, uploader IPs, config-reload
+</ParamField>
+
+<ParamField path="A" type="all">
+  Same as `rwmda.` (read/write/move/delete/admin/dotfiles)
+</ParamField>
+
+## Advanced Examples
+
+### Write-Only Upload Folder
+
+```yaml
+[/inc]
+  /mnt/incoming
+  accs:
+    w: u1   # u1 can upload but not see/download any files
+    rm: u2  # u2 can browse + move files out of this volume
+```
+
+### Anonymous Upload with Filekeys
+
+```yaml
+[/i]
+  /mnt/ss
+  accs:
+    rw: u1  # u1 can read-write
+    g: *    # everyone can access files if they know the URL
+  flags:
+    fk: 4   # each file URL will have a 4-character password
+```
+
+- `u1` can upload files, browse the folder, and see the generated filekeys
+- Other users cannot browse the folder, but can access files if they have the full file URL with the filekey
+- Replacing `g` with `wg` would let anonymous users upload files, but not see the required filekey to access it
+- Replacing `g` with `wG` would let anonymous users upload files, receiving a working direct link in return
+
+## User Groups
+
+### Built-in Groups
+
+<CodeGroup>
+```yaml Access for All Logged-In Users
+[groups]
+  # Not needed - @acct is built-in
+
+[/music]
+  /mnt/music
+  accs:
+    r: @acct  # All authenticated users can read
+```
+
+```yaml Access for Non-Logged-In Users
+[/welcome]
+  /srv/welcome
+  accs:
+    r: *,-@acct  # Everyone NOT logged in can read
+```
+</CodeGroup>
+
+### Custom Groups
+
+```yaml
+[groups]
+  g1: u1, u2  # create a group named g1
+  admins: alice, bob, charlie
+
+[/music]
+  /mnt/music
+  accs:
+    r: @g1     # group members can read
+    rw: @admins,-james  # admins except james can read-write
+```
+
+## Shadowing
+
+Hiding specific subfolders by mounting another volume on top of them.
+
+```bash
+# Mount /mnt as webroot, but hide /mnt/web/certs
+-v /mnt::r -v /var/empty:web/certs:r
+```
+
+Visitors can see contents of `/mnt` and `/mnt/web` (at URLs `/` and `/web`), but not `/mnt/web/certs` because URL `/web/certs` is mapped to `/var/empty`.
+
+<Info>
+This also works for single files, because files can also be volumes.
+</Info>
+
+## Dotfiles
+
+Unix-style hidden files/folders starting with a dot.
+
+- Anyone can access dotfiles if they know the name
+- Dotfiles normally don't appear in directory listings
+- A client can request to see dotfiles if:
+  - Global option `-ed` is specified, OR
+  - The volume has volflag `dots`, OR
+  - The user has permission `.`
+
+### Configuration Example
+
+```yaml
+[/foo]
+  /srv/foo
+  accs:
+    r.: ed   # user "ed" has read-access + dot-access
+  flags:
+    dotsrch  # dotfiles appear in search results
+    dots     # everyone can see dotfiles in this volume
+```
+
+<Warning>
+Even if a user has permission to see dotfiles, they are default-hidden unless `--see-dots` is set, and/or the user has enabled the `dotfiles` option in the settings tab.
+</Warning>
+
+## Password Ban Protection
+
+Anyone trying to bruteforce a password gets banned according to `--ban-pw`.
+
+**Default:** 24h ban for 9 failed attempts in 1 hour
+
+```yaml
+[global]
+  ban-pw: 9,60,1440  # 9 attempts in 60 minutes = 1440 minute ban
+```
+
+## Complete Example
+
+```yaml
+[accounts]
+  ed: 123
+  k: k
+
+[groups]
+  staff: ed, k
+
+[/]         # webroot
+  .
+  accs:
+    r: *    # everyone gets read-access
+    rw: ed  # user "ed" gets read-write
+
+[/priv]     # restricted subfolder
+  ./priv
+  accs:
+    r: k    # user "k" can see the contents
+    rw: ed  # "ed" gets read-write
+
+[/music]
+  /home/ed/Music
+  accs:
+    r: *    # anyone can read
+
+[/dump]     # write-only folder
+  /home/ed/inc
+  accs:
+    w: *
+  flags:
+    e2d     # enable uploads database
+    nodupe  # reject duplicate uploads
+
+[/sharex]   # anonymous upload with filekeys
+  /home/ed/inc/sharex
+  accs:
+    wG: *        # write-upget = see your own uploads only
+    rwmd: @staff # read-write-move-delete for staff group
+  flags:
+    e2d, d2t, fk: 4
+    # e2d: enable uploads database
+    # d2t: disable multimedia parsers
+    # fk: enable 4-character filekeys
+```

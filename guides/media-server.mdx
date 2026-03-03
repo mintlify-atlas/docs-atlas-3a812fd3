@@ -1,0 +1,424 @@
+---
+title: 'Media Server Setup'
+description: 'Configure copyparty as a media server with audio/video playback and metadata indexing'
+---
+
+## Overview
+
+copyparty includes a powerful media player that supports almost every audio and video format, with features like playlist management, audio transcoding, and metadata-based searching.
+
+## Prerequisites
+
+For the best media server experience, install these optional dependencies:
+
+<CodeGroup>
+
+```bash Debian/Ubuntu
+apt install --no-install-recommends python3-pil ffmpeg
+```
+
+```bash Fedora
+dnf install python3-pillow ffmpeg --allowerasing
+```
+
+```bash Alpine
+apk add py3-pillow ffmpeg
+```
+
+```bash macOS (Homebrew)
+brew install pillow ffmpeg
+```
+
+```bash Windows
+python -m pip install --user -U Pillow
+# Download FFmpeg from ffmpeg.org
+```
+
+</CodeGroup>
+
+## Basic Media Server Setup
+
+<Steps>
+
+### Share your music library
+
+Start with a simple read-only music server:
+
+```bash
+python copyparty-sfx.py -e2dsa -e2ts -v /mnt/music:/music:r
+```
+
+- `-e2dsa` - Scan and index all files on startup
+- `-e2ts` - Index audio/video metadata tags
+- `/mnt/music:/music:r` - Share music folder as read-only
+
+### Enable thumbnails and spectrograms
+
+Thumbnails are enabled by default when FFmpeg/Pillow is installed:
+
+```bash
+python copyparty-sfx.py -e2dsa -e2ts -v /mnt/music:/music:r
+```
+
+Audio files get spectrogram thumbnails automatically. Disable with `--no-athumb` if needed.
+
+### Configure metadata display
+
+Customize which tags appear in the file listing:
+
+```bash
+python copyparty-sfx.py -e2dsa -e2ts \
+  -mte artist,album,title,.tn,date \
+  -v /mnt/music:/music:r
+```
+
+- `-mte` - Metadata Tags to Extract/display
+- `.tn` - Track number (dot prefix = numeric value)
+- Common tags: `artist`, `album`, `title`, `date`, `.bpm`, `genre`
+
+### Add password protection
+
+Create a private media server:
+
+```bash
+python copyparty-sfx.py -e2dsa -e2ts \
+  -a alice:secretpass \
+  -v /mnt/music:/music:r,alice
+```
+
+</Steps>
+
+## Configuration File Setup
+
+For a production media server, use a configuration file:
+
+```yaml media-server.conf
+[global]
+  e2dsa      # index all files on startup
+  e2ts       # scan audio/video tags
+  theme: 2   # flat dark theme (looks nice for media)
+  
+[accounts]
+  alice: secretpass
+  bob: otherpass
+
+[/music]
+  /mnt/nas/music
+  accs:
+    r: alice, bob  # both users can access
+  flags:
+    mte: artist,album,title,.tn,date,genre  # tags to display
+
+[/videos]
+  /mnt/nas/videos  
+  accs:
+    r: alice, bob
+  flags:
+    e2d, e2t           # enable indexing
+    dvthumb            # disable video thumbnails (saves CPU)
+```
+
+Start the server:
+
+```bash
+python copyparty-sfx.py -c media-server.conf
+```
+
+## Advanced Media Features
+
+### Audio Transcoding
+
+The media player can transcode unsupported formats on-the-fly. Enable opus transcoding for mobile devices:
+
+```bash
+python copyparty-sfx.py -e2dsa -e2ts -v /mnt/music:/music:r
+```
+
+In the web UI, click `[🎺]` (media player settings):
+- Enable `[oth]` to transcode uncommon formats
+- Enable `[flac]` to transcode FLAC files for bandwidth savings
+- Choose `[opus]` or `[mp3]` as the output format
+
+### Custom Sort Order
+
+Sort files by album, track number, artist, and title:
+
+```bash
+python copyparty-sfx.py -e2dsa -e2ts \
+  --sort tags/album,tags/.tn,tags/artist,tags/title \
+  -v /mnt/music:/music:r
+```
+
+Or in config file:
+
+```yaml
+[/music]
+  /mnt/music
+  accs:
+    r: *
+  flags:
+    e2dsa, e2ts
+    sort: tags/album,tags/.tn,tags/artist,tags/title
+```
+
+### RSS Feeds for Podcasts
+
+Enable RSS feeds for podcast clients:
+
+```bash
+python copyparty-sfx.py -e2dsa -e2ts \
+  -v /mnt/podcasts:/podcasts:r:c,rss
+```
+
+Access the RSS feed:
+```
+http://your-server:3923/podcasts/?rss&fext=mp3
+```
+
+Add parameters:
+- `?rss&recursive` - Include subfolders
+- `?rss&fext=mp3,opus` - Only include specific formats
+- `?rss&nf=50` - Limit to 50 newest files
+- `?rss&pw=password` - Include password in feed
+
+### Video Thumbnails
+
+Video thumbnails are generated automatically with FFmpeg:
+
+```bash
+python copyparty-sfx.py -e2dsa -v /mnt/videos:/videos:r
+```
+
+Disable video thumbnails to save CPU:
+
+```yaml
+[/videos]
+  /mnt/videos
+  flags:
+    dvthumb  # disable video thumbnails
+```
+
+### Playlist Support
+
+Create and use M3U playlists:
+
+<Steps>
+
+<Step title="Enable playlist creation">
+  In the web UI, open `[🎺]` media player settings and enable `[📻]` create-playlist.
+</Step>
+
+<Step title="Add songs to playlist">
+  - Click `[📻add]` while a song is playing
+  - Or select multiple files and click `[📻add]`
+</Step>
+
+<Step title="Save the playlist">
+  - Click `[📻copy]` to copy to clipboard
+  - Create a new file with `.m3u` extension
+  - Paste the playlist content
+</Step>
+
+<Step title="Play the playlist">
+  Click on any `.m3u` file and choose "Play"
+</Step>
+
+</Steps>
+
+## Metadata Indexing
+
+### Supported Audio Formats
+
+copyparty can extract metadata from:
+- MP3, FLAC, Opus, Ogg Vorbis
+- M4A, AAC, ALAC
+- WMA, WAV, AIFF
+- Module formats (MOD, XM, S3M, IT)
+- And many more with FFmpeg
+
+### Additional Metadata with Plugins
+
+Use external scripts to add BPM and key detection:
+
+```yaml
+[/music]
+  /mnt/music
+  flags:
+    e2dsa, e2ts
+    mte: artist,title,.bpm,key  # display BPM and key
+    mtp: .bpm=~/bin/audio-bpm.py     # detect BPM
+    mtp: key=~/bin/audio-key.py      # detect key
+```
+
+See [example plugins in the repo](https://github.com/9001/copyparty/tree/hovudstraum/bin/mtag).
+
+### Hide Tags by Default
+
+Index tags for searching but don't display them:
+
+```bash
+python copyparty-sfx.py -e2ts \
+  -mte artist,album,title \
+  -mth genre,date,.bpm \
+  -v /mnt/music:/music:r
+```
+
+- `-mth` - Tags to hide (still searchable)
+- Users can unhide them in the `[⚙️]` settings tab
+
+## Search Features
+
+With indexing enabled, users can search by:
+
+### Tag-based search
+
+Open `[🔎]` search tab:
+- **Name:** `demetori` - Find files with "demetori" in filename
+- **Tags:** `artist:*nhato*` - Find by artist tag
+- **Raw query:** `tags.artist like '%touhou%'` - SQL-style queries
+
+### File content search
+
+Drag and drop files into the upload area and select "Search" to find duplicates by content hash.
+
+## Performance Optimization
+
+<AccordionGroup>
+  <Accordion title="Exclude large files from indexing">
+    Skip hashing for large video files:
+
+    ```yaml
+    [/videos]
+      /mnt/videos
+      flags:
+        e2dsa
+        nohash: \.(mkv|mp4|avi)$  # don't hash video files
+    ```
+  </Accordion>
+
+  <Accordion title="Move database to SSD">
+    Store the index database on a faster disk:
+
+    ```yaml
+    [global]
+      hist: /mnt/ssd/copyparty-cache
+
+    [/music]
+      /mnt/nas/music
+      flags:
+        e2dsa, e2ts
+    ```
+  </Accordion>
+
+  <Accordion title="Disable thumbnails for large libraries">
+    ```bash
+    python copyparty-sfx.py -e2dsa -e2ts --no-vthumb \
+      -v /mnt/music:/music:r
+    ```
+
+    Disables video thumbnails but keeps audio spectrograms.
+  </Accordion>
+
+  <Accordion title="Set thumbnail cache size">
+    ```bash
+    python copyparty-sfx.py --th-maxage 2592000 \
+      -v /mnt/music:/music:r
+    ```
+
+    Thumbnails expire after 30 days (2592000 seconds).
+  </Accordion>
+</AccordionGroup>
+
+## Mobile Access
+
+### iOS Shortcuts
+
+Create shortcuts to quickly access your music:
+
+1. Open Shortcuts app
+2. Create new shortcut
+3. Add "Open URL" action
+4. Set URL: `http://your-server:3923/music`
+
+### Android App
+
+Use the [copyparty Android app](https://github.com/9001/copyparty/blob/hovudstraum/docs/android.md) for quick uploads and access.
+
+### Progressive Web App
+
+Add copyparty to your home screen:
+1. Open in mobile browser
+2. Tap "Add to Home Screen"
+3. Access like a native app
+
+## Example: Complete Music Server
+
+```yaml complete-media.conf
+[global]
+  e2dsa               # scan all files on startup
+  e2ts                # index audio/video tags
+  theme: 2            # dark theme
+  grid                # grid view by default
+  no-robots           # hide from search engines
+  force-js            # disable plain HTML (cleaner)
+
+[accounts]
+  alice: pass1
+  bob: pass2
+  
+[/music]
+  /mnt/nas/music
+  accs:
+    r: alice, bob
+  flags:
+    rss                           # enable RSS feeds
+    mte: artist,album,title,.tn,date,genre
+    sort: tags/album,tags/.tn,tags/artist,tags/title
+    th-covers: folder.jpg,cover.jpg,folder.png
+
+[/audiobooks]
+  /mnt/nas/audiobooks
+  accs:
+    r: alice, bob
+  flags:
+    e2dsa, e2ts
+    opds              # enable OPDS for e-readers
+    rss
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Tags not appearing">
+    - Ensure `-e2ts` is set
+    - Tags must be in `-mte` to display
+    - Run with `-e2tsr` once to rebuild tag database
+    - Check that FFmpeg or Mutagen is installed
+  </Accordion>
+
+  <Accordion title="Thumbnails not working">
+    - Install FFmpeg and/or Pillow
+    - Check file permissions on `.hist/` folder
+    - Some formats need specific FFmpeg builds
+    - Use `--th-ff-jpg` for compatibility
+  </Accordion>
+
+  <Accordion title="Slow indexing">
+    - Use `--no-hash` for large video files
+    - Move database to SSD with `--hist`
+    - Reduce `--mtag-mt` (default is CPU count)
+  </Accordion>
+
+  <Accordion title="Music stops on mobile">
+    Android: disable battery optimization for your browser app.
+    
+    iOS: known browser limitations, try enabling preload in player settings.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+- Configure [write-only folders](/guides/write-only-folders) for user uploads
+- Enable [deduplication](/guides/deduplication) to save space
+- Set up [authentication with SSO](/guides/authentication)
+- Learn about [file sharing permissions](/guides/file-sharing)

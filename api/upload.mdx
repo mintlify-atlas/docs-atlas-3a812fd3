@@ -1,0 +1,315 @@
+---
+title: Upload API
+description: Upload files using PUT, multipart POST, or the resumable up2k protocol
+---
+
+copyparty provides multiple upload methods to suit different use cases, from simple PUT uploads to the advanced up2k resumable upload protocol.
+
+## Upload Methods
+
+### Simple PUT Upload
+
+Upload a file directly to a specific path:
+
+```bash
+curl -X PUT \
+  -H "PW: your-password" \
+  --data-binary @file.txt \
+  http://server:3923/path/to/file.txt
+```
+
+<ParamField path="path" type="string" required>
+  Destination path for the file
+</ParamField>
+
+<ParamField header="Content-Length" type="integer" required>
+  Size of the file in bytes
+</ParamField>
+
+<ParamField header="PW" type="string">
+  Authentication password (alternative to `?pw=` parameter)
+</ParamField>
+
+### Multipart POST Upload
+
+Upload files using standard HTML form multipart encoding:
+
+```bash
+curl -X POST \
+  -H "PW: your-password" \
+  -F "f=@file1.txt" \
+  -F "f=@file2.txt" \
+  http://server:3923/destination/folder/
+```
+
+<ParamField body="f" type="file" required>
+  File to upload. Multiple files can be included with multiple `f` parameters
+</ParamField>
+
+## Upload Modifiers
+
+Both PUT and POST uploads support these modifiers:
+
+### URL Parameters
+
+<ParamField query="j" type="boolean">
+  Return JSON response with upload metadata
+</ParamField>
+
+<ParamField query="ck" type="string" default="sha512">
+  Checksum algorithm. Options: `no` (disable), `md5`, `sha1`, `sha256`, `b2` (blake2b), `b2s` (blake2s)
+</ParamField>
+
+<ParamField query="replace" type="boolean">
+  Overwrite existing files (requires delete permission)
+</ParamField>
+
+<ParamField query="apnd" type="boolean">
+  Append to existing file instead of overwriting
+</ParamField>
+
+<ParamField query="gz" type="integer">
+  Compress with gzip. Optional compression level 0-9 (default: 9)
+</ParamField>
+
+<ParamField query="xz" type="integer">
+  Compress with xz/lzma. Optional compression level 0-9 (default: 1)
+</ParamField>
+
+<ParamField query="rand" type="integer">
+  Generate random filename with specified number of characters
+</ParamField>
+
+<ParamField query="life" type="integer">
+  Auto-delete file after specified seconds (requires volume lifetime setting)
+</ParamField>
+
+### HTTP Headers
+
+<ParamField header="Accept" type="string">
+  Response format: `url` (just URL), `json` (full metadata)
+</ParamField>
+
+<ParamField header="Rand" type="integer">
+  Same as `?rand=` parameter - generate random filename
+</ParamField>
+
+<ParamField header="Life" type="integer">
+  Same as `?life=` parameter - file lifetime in seconds
+</ParamField>
+
+<ParamField header="Replace" type="boolean">
+  Same as `?replace` parameter - overwrite existing files
+</ParamField>
+
+<ParamField header="CK" type="string">
+  Same as `?ck=` parameter - checksum algorithm
+</ParamField>
+
+## up2k Resumable Upload Protocol
+
+The up2k protocol provides resumable, chunked uploads with integrity verification. It's the most reliable method for large files.
+
+### How up2k Works
+
+1. **Client splits file into chunks** (1-32 MiB each, max 256-4096 chunks)
+2. **Client hashes each chunk** with SHA-512
+3. **Handshake**: Client sends hashlist to server
+4. **Server creates wark** (upload identifier) and sparse file
+5. **Client uploads chunks** (can be parallel, non-sequential)
+6. **Server validates** each chunk hash
+7. **Final handshake**: Server confirms all chunks received
+
+### Chunk Size Calculation
+
+Chunk sizes are automatically determined by file size:
+
+| File Size | Chunk Size | Max Chunks |
+|-----------|------------|------------|
+| ≤ 256 MiB | 1.0 MiB    | 256        |
+| ≤ 384 MiB | 1.5 MiB    | 256        |
+| ≤ 512 MiB | 2.0 MiB    | 256        |
+| ≤ 1 GiB   | 4.0 MiB    | 256        |
+| ≤ 4 GiB   | 16 MiB     | 256        |
+| ≤ 128 GiB | 32 MiB     | 4096       |
+| ≤ 1 TiB   | 256 MiB    | 4096       |
+| > 1 TiB   | up to 8 GiB| 4096       |
+
+### Step 1: Handshake (Initial)
+
+Send file metadata and chunk hashes:
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "PW: your-password" \
+  -d '{
+    "name": "file.bin",
+    "size": 10485760,
+    "lmod": 1234567890,
+    "hash": [
+      "base64-encoded-sha512-chunk1-hash",
+      "base64-encoded-sha512-chunk2-hash"
+    ]
+  }' \
+  http://server:3923/destination/folder/
+```
+
+<ResponseField name="wark" type="string">
+  Upload identifier - unique ID for this upload session
+</ResponseField>
+
+<ResponseField name="purl" type="string">
+  URL where file will be accessible after upload
+</ResponseField>
+
+<ResponseField name="need" type="array">
+  List of chunk hashes that need to be uploaded (empty if file already exists)
+</ResponseField>
+
+### Step 2: Upload Chunks
+
+Upload each required chunk:
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/octet-stream" \
+  -H "Content-Length: 1048576" \
+  -H "X-Up2k-Hash: chunk-hash-1,chunk-hash-2" \
+  -H "X-Up2k-Wark: wark-from-handshake" \
+  -H "PW: your-password" \
+  --data-binary @chunk-data \
+  http://server:3923/destination/folder/
+```
+
+<ParamField header="X-Up2k-Hash" type="string" required>
+  Comma-separated list of chunk hashes being uploaded. Can upload multiple consecutive chunks in one request
+</ParamField>
+
+<ParamField header="X-Up2k-Wark" type="string" required>
+  The wark identifier from the initial handshake
+</ParamField>
+
+<ParamField header="X-Up2k-Subc" type="integer">
+  For partial chunk uploads - byte offset within the chunk (resumable even within a chunk)
+</ParamField>
+
+### Step 3: Final Handshake
+
+Confirm upload completion:
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "PW: your-password" \
+  -d '{
+    "name": "file.bin",
+    "size": 10485760,
+    "hash": [
+      "base64-encoded-sha512-chunk1-hash",
+      "base64-encoded-sha512-chunk2-hash"
+    ]
+  }' \
+  http://server:3923/destination/folder/
+```
+
+Server responds with:
+- `need: []` if all chunks received
+- `need: ["hash1", "hash2"]` if chunks are missing (re-upload them)
+
+## Response Examples
+
+### Successful Upload (JSON)
+
+```json
+{
+  "url": "/files/document.pdf",
+  "size": 1048576,
+  "sha512": "base64-encoded-sha512-hash",
+  "upload_time": 1234567890
+}
+```
+
+### up2k Handshake Response
+
+```json
+{
+  "wark": "abcd1234-upload-identifier",
+  "purl": "/uploads/2024-03-03/file.bin",
+  "need": [
+    "hash-of-chunk-3",
+    "hash-of-chunk-7"
+  ]
+}
+```
+
+## Upload Features
+
+### Deduplication
+
+up2k automatically detects duplicate files:
+- If file with same content exists, returns existing file URL
+- Can create symlinks to duplicates (if enabled with `--dedup`)
+- Content-based matching via SHA-512 hashes
+
+### Resume Support
+
+- up2k uploads resume automatically if interrupted
+- Re-upload same file - server skips already-received chunks
+- Works even after browser/client restart
+- Subchunk resume supported with `X-Up2k-Subc` header
+
+### Parallel Uploads
+
+- up2k chunks can be uploaded in parallel
+- Non-sequential upload order supported
+- Improves performance on fast connections
+
+### Write-Only Folders
+
+With `g` or `G` permission:
+- Users can upload but not browse
+- `g`: Cannot see file URLs
+- `G`: Receive file URL/key after upload
+
+## Error Handling
+
+<ResponseField name="400" type="error">
+  Bad request - invalid parameters, missing headers, or chunk mismatch
+</ResponseField>
+
+<ResponseField name="401" type="error">
+  Authentication required - missing or invalid credentials
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  Insufficient permissions - user lacks write access
+</ResponseField>
+
+<ResponseField name="413" type="error">
+  File too large - exceeds volume size limits
+</ResponseField>
+
+<ResponseField name="500" type="error">
+  Server error - disk full, permissions issue, or corruption detected
+</ResponseField>
+
+## Best Practices
+
+<Tip>
+  - Use up2k for files > 10 MiB for automatic resume capability
+  - Enable `?j` parameter to get structured JSON responses
+  - Use `?ck=no` for faster uploads if integrity is not critical
+  - Set `?life=` for temporary files that should auto-delete
+</Tip>
+
+<Warning>
+  - up2k requires JavaScript client or manual implementation
+  - Chunk hashes must be URL-safe base64 encoded
+  - Maximum 4096 chunks per file
+  - Wark expires if upload is abandoned (server cleans up automatically)
+</Warning>
+
+## Example: Complete up2k Upload
+
+See the [official Python client](https://github.com/9001/copyparty/blob/hovudstraum/bin/u2c.py) for a complete implementation of the up2k protocol.

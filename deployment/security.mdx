@@ -1,0 +1,636 @@
+---
+title: Security Best Practices
+description: Secure your copyparty installation with HTTPS, authentication, and hardening
+---
+
+## Overview
+
+Security is critical when running a file server accessible over the network. This guide covers authentication, HTTPS setup, permission models, and hardening techniques.
+
+<Warning>
+  Running copyparty with default settings gives everyone read-write access. Always configure proper authentication and permissions before exposing to the internet.
+</Warning>
+
+## Authentication
+
+### Basic Authentication
+
+Define user accounts and passwords:
+
+```yaml
+[accounts]
+  alice: password123
+  bob: hunter2
+  admin: secure_password_here
+```
+
+<Warning>
+  Never use weak passwords or default credentials in production.
+</Warning>
+
+### Password Hashing
+
+Store passwords as hashes instead of plaintext:
+
+<Steps>
+  <Step title="Enable password hashing">
+    ```yaml
+    [global]
+      ah-alg: argon2  # Use Argon2 hashing
+    ```
+  </Step>
+  
+  <Step title="Generate hashed passwords">
+    Start copyparty with plaintext passwords - it will print hashed versions:
+    
+    ```bash
+    copyparty -c /etc/copyparty.conf
+    ```
+    
+    Output:
+    ```
+    replace plaintext passwords with these:
+      alice: $argon2id$v=19$m=262144,t=8,p=1$...
+      bob: $argon2id$v=19$m=262144,t=8,p=1$...
+    ```
+  </Step>
+  
+  <Step title="Update configuration">
+    Replace plaintext passwords with hashes:
+    
+    ```yaml
+    [accounts]
+      alice: $argon2id$v=19$m=262144,t=8,p=1$...
+      bob: $argon2id$v=19$m=262144,t=8,p=1$...
+    ```
+  </Step>
+  
+  <Step title="Interactive hashing (optional)">
+    Use `--ah-cli` to hash passwords interactively:
+    
+    ```bash
+    copyparty --ah-alg argon2 --ah-cli
+    ```
+    
+    This never writes plaintext passwords to disk.
+  </Step>
+</Steps>
+
+<Note>
+  Default Argon2 settings use ~256 MiB RAM and take ~0.4 seconds per password on a decent laptop.
+</Note>
+
+**Important for username mode:**
+```yaml
+[global]
+  usernames  # Enable username requirement
+```
+
+When hashing passwords with `--usernames` enabled, provide as `username:password`:
+```bash
+echo "alice:password123" | copyparty --ah-alg argon2 --ah-cli
+```
+
+### Permission Model
+
+Copyparty uses fine-grained permissions:
+
+| Permission | Description |
+|------------|-------------|
+| `r` | Read: browse folders, download files, zip/tar |
+| `w` | Write: upload files, move files into folder |
+| `m` | Move: move files/folders from this folder |
+| `d` | Delete: delete files/folders |
+| `a` | Admin: see upload times, IPs, reload config |
+| `.` | Dots: see dotfiles in listings |
+| `g` | Get: download files only (no browsing) |
+| `G` | Upget: upload + get filekeys |
+| `h` | HTML: serve index.html, hide listings |
+
+Shortcuts:
+- `A` = `rwmda.` (all permissions)
+
+### Example Permission Configurations
+
+#### Public Read, Private Write
+
+```yaml
+[accounts]
+  admin: hashed_password_here
+
+[/]
+  /srv/public
+  accs:
+    r: *        # Everyone can read
+    rwmda: admin  # Only admin can write/delete/manage
+```
+
+#### Multiple User Tiers
+
+```yaml
+[accounts]
+  alice: pass1
+  bob: pass2
+  charlie: pass3
+
+[groups]
+  editors: alice, bob
+
+[/documents]
+  /srv/docs
+  accs:
+    r: *          # Everyone can read
+    rw: @editors  # Alice and Bob can write
+    rwmda: charlie  # Charlie has full control
+```
+
+#### Upload-Only Folder
+
+```yaml
+[/uploads]
+  /srv/uploads
+  accs:
+    w: *        # Anyone can upload
+    r: alice    # Only alice can see/download
+    rwmda: admin  # Admin has full control
+```
+
+#### Write-Only with Filekeys
+
+```yaml
+[/dropbox]
+  /srv/dropbox
+  accs:
+    wG: *       # Anyone can upload and get their filekeys
+    rwmda: admin
+  flags:
+    fk: 6       # 6-character filekeys
+```
+
+Users can upload but not browse. They receive unique URLs to access their uploads.
+
+### IP-Based Authentication
+
+Auto-login users from specific IP ranges:
+
+```yaml
+[accounts]
+  localuser: password
+  alice: password
+
+[global]
+  ipa: localuser@192.168.1.0/24  # Auto-login from LAN
+  ipa: alice@10.0.0.5            # Auto-login from specific IP
+```
+
+Restrict users to specific IPs:
+```yaml
+[global]
+  ipa-nm: alice@10.0.0.0/8  # Alice can only connect from 10.x.x.x
+```
+
+## HTTPS/TLS Configuration
+
+### Using a Reverse Proxy (Recommended)
+
+Let nginx, Apache, or Caddy handle HTTPS:
+
+```yaml
+[global]
+  i: 127.0.0.1  # Only accept local connections
+  xff-hdr: x-forwarded-for
+  rproxy: 1
+```
+
+See [Reverse Proxy Setup](/deployment/reverse-proxy) for details.
+
+### Native HTTPS with cfssl
+
+<Steps>
+  <Step title="Install cfssl">
+    ```bash
+    # Download cfssl tools
+    wget https://github.com/cloudflare/cfssl/releases/latest/download/cfssl_linux_amd64
+    wget https://github.com/cloudflare/cfssl/releases/latest/download/cfssljson_linux_amd64
+    wget https://github.com/cloudflare/cfssl/releases/latest/download/cfssl-certinfo_linux_amd64
+    
+    # Install
+    sudo mv cfssl_linux_amd64 /usr/local/bin/cfssl
+    sudo mv cfssljson_linux_amd64 /usr/local/bin/cfssljson
+    sudo mv cfssl-certinfo_linux_amd64 /usr/local/bin/cfssl-certinfo
+    sudo chmod +x /usr/local/bin/cfssl*
+    ```
+  </Step>
+  
+  <Step title="Start copyparty">
+    Copyparty will auto-generate certificates:
+    
+    ```bash
+    copyparty --crt-dir /etc/copyparty/certs
+    ```
+    
+    Certificates are saved to `--crt-dir` for distribution.
+  </Step>
+  
+  <Step title="Install CA certificate">
+    Distribute `ca.pem` to all client devices and install as trusted CA.
+    
+    <Warning>
+      This is a self-signed certificate. For public deployments, use Let's Encrypt via reverse proxy.
+    </Warning>
+  </Step>
+</Steps>
+
+## Hardening
+
+### Safety Profiles
+
+Copyparty provides security shortcuts:
+
+#### Profile: `-s` (Safe)
+
+```bash
+copyparty -s
+```
+
+Enables:
+- `--no-thumb` - Disable thumbnails (no FFmpeg/Pillow on uploads)
+- `--no-mtag-ff` - Use Mutagen instead of FFmpeg for tags
+- `--dotpart` - Hide uploads while incomplete
+- `--no-robots` - Tell search engines to stay away
+- `--force-js` - Require JavaScript (harder for crawlers)
+
+#### Profile: `-ss` (Safer)
+
+All of `-s` plus:
+- `--unpost 0` - Disable upload undo
+- `--no-del` - Disable delete
+- `--no-mv` - Disable move/rename
+- `--hardlink` - Use hardlinks for deduplication
+- `--vague-403` - Return 404 instead of 403
+- `-nih` - Remove hostname from listings
+
+#### Profile: `-sss` (Safest)
+
+All of `-ss` plus:
+- `--no-dav` - Disable WebDAV
+- `--no-logues` - Disable prologues/epilogues
+- `--no-readme` - Disable README rendering
+- `-lo cpp-%Y-%m%d-%H%M%S.txt.xz` - Log to compressed files
+- `-ls **,*,ln,p,r` - Scan for dangerous symlinks on startup
+
+### Per-Volume Hardening
+
+Disable HTML rendering for untrusted uploads:
+
+```yaml
+[/uploads]
+  /srv/uploads
+  accs:
+    w: *
+  flags:
+    nohtml  # Serve HTML as plaintext, disable markdown
+```
+
+This prevents XSS attacks from uploaded files.
+
+### Filekeys (Prevent Bruteforcing)
+
+Require secret keys to access files:
+
+```yaml
+[/private]
+  /srv/private
+  accs:
+    r: alice
+    g: *      # Others need filekeys
+  flags:
+    fk: 4     # 4-character filekeys
+```
+
+Users with `r` permission see URLs like:
+```
+https://example.com/private/document.pdf?k=x3tK
+```
+
+Users with `g` permission need the key to access the file.
+
+**Dirkeys** (directory access keys):
+```yaml
+flags:
+  dk: true   # Enable directory keys
+  dks: true  # Allow access to subdirectories
+```
+
+### CORS Configuration
+
+By default, non-GET/HEAD requests must:
+- Have no `Origin` header, OR
+- Have `Origin` matching the server domain, OR
+- Include `PW` header with password
+
+Customize CORS:
+```yaml
+[global]
+  acao: https://trusted-site.com  # Allow specific origin
+  acam: GET,POST                  # Allowed methods
+  allow-csrf: true                # Disable CORS (not recommended)
+```
+
+### Rate Limiting and Bans
+
+Default settings:
+- **Password attempts:** 9 failures in 1 hour = 24 hour ban
+- Configure with `--ban-pw`
+
+```yaml
+[global]
+  ban-pw: 5,3600,86400  # 5 attempts, 1 hour window, 24h ban
+```
+
+View active bans in the control panel (requires admin permission).
+
+## Additional Security Measures
+
+### Restrict Access by IP
+
+Listen only on localhost (for reverse proxy):
+```yaml
+[global]
+  i: 127.0.0.1
+```
+
+Or specific interface:
+```yaml
+[global]
+  i: 192.168.1.100
+```
+
+### Disable Unnecessary Features
+
+```yaml
+[global]
+  no-dav      # Disable WebDAV
+  no-ftp      # Disable FTP
+  no-robots   # robots.txt: noindex, nofollow
+  force-js    # Require JavaScript (anti-crawler)
+```
+
+### Hide Server Information
+
+```yaml
+[global]
+  nih         # Remove hostname from UI
+  no-ver      # Don't show version in control panel
+```
+
+### Protect Against XSS
+
+```yaml
+[/uploads]
+  /srv/uploads
+  flags:
+    nohtml     # Serve HTML as text
+    no-readme  # Don't render README.md
+    no-logues  # Don't render .prologue/.epilogue
+```
+
+### Systemd Security Hardening
+
+The example systemd service includes hardening:
+
+```ini
+[Service]
+MemoryMax=50%
+MemorySwapMax=50%
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+RemoveIPC=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+```
+
+See [Systemd Service](/deployment/systemd) for details.
+
+### Docker Security
+
+Run as non-root user:
+```bash
+docker run -u 1000:1000 ...
+```
+
+Limit resources:
+```yaml
+services:
+  copyparty:
+    image: copyparty/ac
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+```
+
+### Chroot Isolation
+
+Run copyparty in a chroot for maximum isolation:
+
+```bash
+# Using prisonparty.sh
+/usr/local/bin/prisonparty.sh /var/lib/copyparty-jail copyparty copyparty \
+  /mnt/share \
+  -- \
+  /usr/bin/python3 /usr/local/bin/copyparty-sfx.py -v /mnt/share::rw
+```
+
+See [Systemd Service - Chroot Setup](/deployment/systemd#chroot-prisonparty-setup).
+
+## Monitoring and Auditing
+
+### Enable Logging
+
+```yaml
+[global]
+  lo: /var/log/copyparty/%Y-%m%d.log
+  ansi  # Color-coded logs
+```
+
+Compressed logs:
+```yaml
+[global]
+  lo: /var/log/copyparty/%Y-%m%d.log.xz
+```
+
+### Admin Features
+
+Users with `a` permission can:
+- View uploader IPs and timestamps
+- Reload configuration
+- View active bans
+- Monitor upload progress
+
+```yaml
+[/admin]
+  /srv/admin
+  accs:
+    rwmda: admin  # Full access including admin features
+```
+
+### Prometheus Metrics
+
+Enable monitoring endpoint:
+
+```yaml
+[global]
+  stats     # Enable /.cpr/metrics endpoint
+  e2dsa     # Required for volume metrics
+```
+
+Only accessible by admin users.
+
+See [README - Prometheus](https://github.com/9001/copyparty#prometheus) for details.
+
+## Common Security Scenarios
+
+### Public File Sharing with Upload
+
+```yaml
+[accounts]
+  admin: hashed_password
+
+[/public]
+  /srv/public
+  accs:
+    r: *       # Anyone can read
+    w: *       # Anyone can upload
+    da: admin  # Only admin can delete
+  flags:
+    nohtml     # Prevent XSS
+    unpost: 0  # Disable upload undo
+```
+
+### Private Cloud Storage
+
+```yaml
+[accounts]
+  alice: pass1
+  bob: pass2
+
+[/alice]
+  /srv/alice
+  accs:
+    rwmda: alice
+
+[/bob]
+  /srv/bob
+  accs:
+    rwmda: bob
+
+[/shared]
+  /srv/shared
+  accs:
+    rw: alice, bob
+```
+
+### Read-Only Archive
+
+```yaml
+[/archive]
+  /srv/archive
+  accs:
+    r: *       # Public read
+    # No write permissions
+```
+
+### Authenticated Download Server
+
+```yaml
+[accounts]
+  user: password
+
+[/downloads]
+  /srv/downloads
+  accs:
+    r: user    # Only authenticated users
+  flags:
+    fk: 6      # Filekeys for sharing
+```
+
+## Security Checklist
+
+<Steps>
+  <Step title="Authentication">
+    - [ ] Set strong passwords
+    - [ ] Enable password hashing with `--ah-alg argon2`
+    - [ ] Disable default accounts
+    - [ ] Use groups for permission management
+  </Step>
+  
+  <Step title="HTTPS">
+    - [ ] Enable HTTPS (reverse proxy or cfssl)
+    - [ ] Use valid certificates (Let's Encrypt)
+    - [ ] Disable HTTP if possible
+    - [ ] Configure proper headers (`X-Forwarded-For`, etc.)
+  </Step>
+  
+  <Step title="Permissions">
+    - [ ] Follow principle of least privilege
+    - [ ] Review all volume permissions
+    - [ ] Enable `nohtml` for user uploads
+    - [ ] Use filekeys for sensitive content
+  </Step>
+  
+  <Step title="Hardening">
+    - [ ] Use safety profile (`-s`, `-ss`, or `-sss`)
+    - [ ] Disable unused features (FTP, WebDAV, etc.)
+    - [ ] Enable systemd security options
+    - [ ] Run as dedicated user (not root)
+    - [ ] Consider chroot isolation
+  </Step>
+  
+  <Step title="Monitoring">
+    - [ ] Enable logging
+    - [ ] Set up log rotation
+    - [ ] Monitor for suspicious activity
+    - [ ] Review bans and failed login attempts
+  </Step>
+  
+  <Step title="Network">
+    - [ ] Configure firewall rules
+    - [ ] Use reverse proxy for internet exposure
+    - [ ] Implement rate limiting
+    - [ ] Restrict by IP where appropriate
+  </Step>
+</Steps>
+
+## Security Updates
+
+Stay informed about security issues:
+
+- Join the [Discord server](https://discord.gg/25J8CdTT6G) for announcements
+- Watch the [GitHub repository](https://github.com/9001/copyparty)
+- Check [releases](https://github.com/9001/copyparty/releases) regularly
+
+<Warning>
+  Always update to the latest version to ensure you have the latest security patches.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Systemd Service" icon="linux" href="/deployment/systemd">
+    Configure systemd with security hardening
+  </Card>
+  <Card title="Reverse Proxy" icon="server" href="/deployment/reverse-proxy">
+    Set up nginx or Apache
+  </Card>
+  <Card title="Docker" icon="docker" href="/deployment/docker">
+    Container security best practices
+  </Card>
+</CardGroup>

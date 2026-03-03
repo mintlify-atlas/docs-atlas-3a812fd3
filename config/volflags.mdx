@@ -1,0 +1,753 @@
+---
+title: Volume Flags
+description: Per-volume configuration options and flags in copyparty
+---
+
+Volflags are per-volume configuration options. Many global options can be set as volflags, and most volflags can also be set as global options.
+
+<Info>
+See the [complete list of volflags](https://copyparty.eu/cli/#flags-help-page) for all available options.
+</Info>
+
+## Syntax
+
+Volflags are specified in the `flags:` section of a volume configuration:
+
+```yaml
+[/volume]
+  /path/to/folder
+  accs:
+    rw: user
+  flags:
+    e2d           # simple boolean flag
+    fk: 4         # flag with value
+    scan: 60      # another flag with value
+```
+
+## Upload Configuration
+
+### Deduplication
+
+<ParamField path="dedup" type="boolean">
+  Enable symlink-based file deduplication
+  
+  When enabled, duplicate uploads create symlinks instead of storing the file again.
+  
+  ```yaml
+  flags:
+    dedup
+    safededup: 50  # verify file contents before dedup
+  ```
+</ParamField>
+
+<ParamField path="hardlink" type="boolean">
+  Enable hardlink-based deduplication, fallback to symlinks when impossible
+</ParamField>
+
+<ParamField path="hardlinkonly" type="boolean">
+  Dedup with hardlink only, never symlink. Make full copy if hardlink impossible.
+</ParamField>
+
+<ParamField path="reflink" type="boolean">
+  Enable reflink-based deduplication (CoW filesystems), fallback to full copy when impossible
+</ParamField>
+
+<ParamField path="safededup" type="number" default="50">
+  How careful to be when deduplicating:
+  - `1` = just verify filesize
+  - `50` = verify file contents have not been altered (default)
+</ParamField>
+
+<ParamField path="nodupe" type="boolean">
+  Reject duplicate files during upload (only matches within same volume)
+  
+  ```yaml
+  flags:
+    e2d      # required for dupe detection
+    nodupe   # reject duplicates
+  ```
+</ParamField>
+
+<ParamField path="nodupem" type="boolean">
+  Also reject dupes when moving a file into another volume
+</ParamField>
+
+<ParamField path="noclone" type="boolean">
+  Don't use existing data on disk for dupes. Reduces HDD reads but increases network load.
+</ParamField>
+
+### Upload Rules
+
+<ParamField path="maxn" type="string">
+  Maximum number of uploads in a time period
+  
+  ```yaml
+  flags:
+    maxn: 250,600  # max 250 uploads over 10 minutes (600 seconds)
+  ```
+</ParamField>
+
+<ParamField path="maxb" type="string">
+  Maximum upload bytes in a time period
+  
+  ```yaml
+  flags:
+    maxb: 1g,300  # max 1 GiB over 5 minutes
+  ```
+  
+  Suffixes: `b`, `k`, `m`, `g`, `t`
+</ParamField>
+
+<ParamField path="vmaxb" type="string">
+  Total volume size limit
+  
+  ```yaml
+  flags:
+    vmaxb: 10g  # volume cannot exceed 10 GiB total
+  ```
+</ParamField>
+
+<ParamField path="vmaxn" type="string">
+  Maximum number of files in volume
+  
+  ```yaml
+  flags:
+    vmaxn: 4k  # max 4096 files in volume
+  ```
+</ParamField>
+
+<ParamField path="sz" type="string">
+  Allow filesizes within range
+  
+  ```yaml
+  flags:
+    sz: 1k-3m  # only accept files between 1 KiB and 3 MiB
+  ```
+</ParamField>
+
+<ParamField path="df" type="string">
+  Ensure free disk space by rejecting uploads
+  
+  ```yaml
+  flags:
+    df: 1g  # ensure at least 1 GiB remains free
+  ```
+</ParamField>
+
+### Upload Behavior
+
+<ParamField path="rand" type="boolean">
+  Force randomized filenames, 9 characters long by default
+  
+  ```yaml
+  flags:
+    rand
+    nrand: 12  # make random filenames 12 chars long
+  ```
+</ParamField>
+
+<ParamField path="nrand" type="number" default="9">
+  Length of randomized filenames
+</ParamField>
+
+<ParamField path="u2ow" type="number" default="0">
+  When to overwrite existing files:
+  - `0` = never (generate new filename)
+  - `1` = if client file is newer
+  - `2` = always overwrite
+  
+  ```yaml
+  flags:
+    u2ow: 1  # overwrite if newer
+  ```
+</ParamField>
+
+<ParamField path="u2ts" type="string" default="c">
+  How to timestamp uploaded files:
+  - `c` = client last-modified time
+  - `u` = upload time (server time)
+  - `fc` = force client time
+  - `fu` = force upload time
+  
+  ```yaml
+  flags:
+    u2ts: fc  # always use client timestamp
+  ```
+</ParamField>
+
+<ParamField path="magic" type="boolean">
+  Enable filetype detection for nameless uploads
+</ParamField>
+
+<ParamField path="put_name" type="string" default="put-{now.6f}-{cip}.bin">
+  Filename template for nameless uploads
+  
+  ```yaml
+  flags:
+    put_name: upload-{now}.bin
+  ```
+</ParamField>
+
+<ParamField path="nosub" type="boolean">
+  Force all uploads into the top folder of the volume (prevent subdirectories)
+</ParamField>
+
+<ParamField path="rm_partial" type="boolean">
+  Delete unfinished uploads when they timeout (after `--snap-drop` period)
+</ParamField>
+
+### Upload Rotation
+
+Move uploads into organized folder structures automatically.
+
+<ParamField path="rotn" type="string">
+  Organize by number of files per folder
+  
+  ```yaml
+  flags:
+    rotn: 100,3  # 3 levels of subfolders with 100 entries each
+  ```
+  
+  Example: `file-1234.jpg` → `12/34/file-1234.jpg`
+</ParamField>
+
+<ParamField path="rotf" type="string">
+  Organize by date/time format
+  
+  ```yaml
+  flags:
+    rotf: %Y-%m/%d-%H  # organize by year-month/day-hour
+    rotf_tz: Europe/Oslo  # timezone (default: UTC)
+  ```
+  
+  Example: Upload at 2026-03-03 14:30 → `2026-03/03-14/file.jpg`
+</ParamField>
+
+<ParamField path="rotf_tz" type="string" default="UTC">
+  Timezone for `rotf` date formatting
+  
+  Examples: `Europe/Oslo`, `America/Toronto`, `Asia/Tokyo`
+</ParamField>
+
+<ParamField path="lifetime" type="number">
+  Auto-delete uploads after N seconds
+  
+  ```yaml
+  flags:
+    lifetime: 3600  # files deleted after 1 hour
+  ```
+  
+  Clients can specify shorter lifetimes when uploading.
+</ParamField>
+
+### File Permissions
+
+<ParamField path="chmod_f" type="string" default="644">
+  Unix permissions for new files
+  
+  ```yaml
+  flags:
+    chmod_f: 644  # owner RW, others R
+    chmod_f: 600  # owner RW only
+  ```
+</ParamField>
+
+<ParamField path="chmod_d" type="string" default="755">
+  Unix permissions for new directories
+  
+  ```yaml
+  flags:
+    chmod_d: 755   # owner RWX, others RX
+    chmod_d: 2750  # setgid + owner RWX, group RX
+  ```
+</ParamField>
+
+<ParamField path="uid" type="number" default="-1">
+  Unix user-id to chown new files/folders to (-1 = don't change)
+</ParamField>
+
+<ParamField path="gid" type="number" default="-1">
+  Unix group-id to chown new files/folders to (-1 = don't change)
+</ParamField>
+
+<ParamField path="wram" type="boolean">
+  Allow uploading even if volume is inside a ramdisk
+  
+  <Warning>
+  All uploaded data will be lost on server reboot!
+  </Warning>
+</ParamField>
+
+### Compression
+
+<ParamField path="gz" type="boolean">
+  Allow server-side gzip compression of uploads with `?gz` URL parameter
+</ParamField>
+
+<ParamField path="xz" type="boolean">
+  Allow server-side lzma compression of uploads with `?xz` URL parameter
+</ParamField>
+
+<ParamField path="pk" type="string">
+  Force server-side compression (optional: specify algorithm and level)
+  
+  ```yaml
+  flags:
+    pk: xz,9  # force LZMA compression at level 9
+  ```
+</ParamField>
+
+## Database Configuration
+
+### Indexing
+
+<ParamField path="e2d" type="boolean">
+  Enable database; makes files searchable and enables upload-undo
+</ParamField>
+
+<ParamField path="e2ds" type="boolean">
+  Scan writable folders for new files on startup (also sets `e2d`)
+</ParamField>
+
+<ParamField path="e2dsa" type="boolean">
+  Scan all folders for new files on startup (also sets `e2d`)
+</ParamField>
+
+<ParamField path="e2t" type="boolean">
+  Enable multimedia indexing (audio/video tags)
+</ParamField>
+
+<ParamField path="e2ts" type="boolean">
+  Scan existing files for tags on startup (also sets `e2t`)
+</ParamField>
+
+<ParamField path="e2tsr" type="boolean">
+  Delete all metadata from DB for full rescan (also sets `e2ts`)
+</ParamField>
+
+<ParamField path="d2t" type="boolean">
+  Disable metadata collection (overrides `-e2t*`)
+  
+  <Info>
+  Recommended for security when accepting uploads from untrusted users.
+  </Info>
+</ParamField>
+
+<ParamField path="d2d" type="boolean">
+  Disable all database features (overrides all `-e2*`)
+</ParamField>
+
+### Database Location
+
+<ParamField path="hist" type="string">
+  Location for thumbnails and database
+  
+  ```yaml
+  flags:
+    hist: /tmp/cdb  # put .hist folder at /tmp/cdb
+  ```
+</ParamField>
+
+<ParamField path="dbpath" type="string">
+  Location for database only (keep thumbnails in volume)
+  
+  ```yaml
+  flags:
+    dbpath: /ssd/music-db  # database on fast SSD
+  ```
+</ParamField>
+
+<ParamField path="landmark" type="string">
+  Disable database if specified file doesn't exist
+  
+  ```yaml
+  flags:
+    landmark: .enable-db  # DB disabled if .enable-db missing
+  ```
+</ParamField>
+
+### Database Behavior
+
+<ParamField path="scan" type="number">
+  Scan for new files every N seconds
+  
+  ```yaml
+  flags:
+    scan: 60  # rescan every 60 seconds
+  ```
+</ParamField>
+
+<ParamField path="nohash" type="regex">
+  Skip hashing files matching regex pattern
+  
+  ```yaml
+  flags:
+    nohash: \.iso$  # don't hash *.iso files
+  ```
+</ParamField>
+
+<ParamField path="noidx" type="regex">
+  Fully ignore files matching regex pattern
+  
+  ```yaml
+  flags:
+    noidx: /\.(git|svn)/  # ignore git/svn folders
+  ```
+</ParamField>
+
+<ParamField path="noforget" type="boolean">
+  Don't forget files when deleted from disk (keep in database)
+</ParamField>
+
+<ParamField path="forget_ip" type="number">
+  Forget uploader IP after N seconds (GDPR compliance)
+  
+  ```yaml
+  flags:
+    forget_ip: 43200  # forget IPs after 12 hours
+  ```
+</ParamField>
+
+<ParamField path="no_db_ip" type="boolean">
+  Never store uploader IP in database (disables unpost feature)
+</ParamField>
+
+<ParamField path="dbd" type="string" default="wal">
+  Database speed-durability tradeoff:
+  - `acid` = safest, slowest
+  - `swal` = safe, fast
+  - `wal` = balanced (default)
+  - `yolo` = fastest, data loss possible
+  
+  ```yaml
+  flags:
+    dbd: yolo  # maximum performance, minimal safety
+  ```
+</ParamField>
+
+<ParamField path="xlink" type="boolean">
+  Cross-volume dupe detection/linking
+  
+  <Warning>
+  Dangerous - can create links outside volume boundaries!
+  </Warning>
+</ParamField>
+
+<ParamField path="xdev" type="boolean">
+  Don't descend into other filesystems during scanning
+</ParamField>
+
+<ParamField path="xvol" type="boolean">
+  Don't follow symlinks leaving the volume root
+</ParamField>
+
+## Filekeys and Dirkeys
+
+<ParamField path="fk" type="number">
+  Generate per-file access keys (N characters long)
+  
+  ```yaml
+  [/private]
+    /mnt/private
+    accs:
+      g: *   # anyone with URL+key can download
+      rw: admin
+    flags:
+      fk: 4  # 4-character keys
+  ```
+  
+  Keys are invalidated if filesize or inode changes.
+  
+  Example URL: `https://example.com/file.jpg?k=Ab3D`
+</ParamField>
+
+<ParamField path="fka" type="number">
+  Generate slightly weaker per-file keys (not affected by filesize/inode)
+  
+  Better for files that may be modified.
+</ParamField>
+
+<ParamField path="dk" type="number">
+  Generate per-directory access keys
+  
+  ```yaml
+  flags:
+    dk: 6   # 6-character directory keys
+    dks     # allow browsing into subdirs
+  ```
+</ParamField>
+
+<ParamField path="dks" type="boolean">
+  Per-directory keys allow browsing into subdirectories
+</ParamField>
+
+<ParamField path="dky" type="boolean">
+  Allow seeing files (not folders) in a directory with `g` permission without valid dirkey
+</ParamField>
+
+## Thumbnails
+
+<ParamField path="dthumb" type="boolean">
+  Disable all thumbnails
+</ParamField>
+
+<ParamField path="dvthumb" type="boolean">
+  Disable video thumbnails only
+</ParamField>
+
+<ParamField path="dathumb" type="boolean">
+  Disable audio thumbnails (spectrograms) only
+</ParamField>
+
+<ParamField path="dithumb" type="boolean">
+  Disable image thumbnails only
+</ParamField>
+
+<ParamField path="thsize" type="string">
+  Thumbnail resolution (WxH)
+  
+  ```yaml
+  flags:
+    thsize: 320x240
+  ```
+</ParamField>
+
+<ParamField path="crop" type="string">
+  Center-cropping behavior: `y`, `n`, `fy`, `fn`
+</ParamField>
+
+<ParamField path="th3x" type="string">
+  3x resolution thumbnails: `y`, `n`, `fy`, `fn`
+</ParamField>
+
+<ParamField path="th_qv" type="number" default="40">
+  WebP/JPEG thumbnail quality (10-90)
+</ParamField>
+
+<ParamField path="convt" type="number">
+  Convert-to-image timeout in seconds
+</ParamField>
+
+<ParamField path="aconvt" type="number">
+  Convert-to-audio timeout in seconds
+</ParamField>
+
+<ParamField path="th_spec_p" type="number" default="1">
+  Make spectrograms:
+  - `0` = never
+  - `1` = fallback if no thumbnail available
+  - `2` = always
+</ParamField>
+
+<ParamField path="ext_th" type="string">
+  Use custom thumbnail for file extension
+  
+  ```yaml
+  flags:
+    ext_th: exe=/icons/exe.png
+    ext_th: pdf=/icons/pdf.svg
+  ```
+</ParamField>
+
+## Client and UX
+
+<ParamField path="grid" type="boolean">
+  Show grid/thumbnails view by default
+</ParamField>
+
+<ParamField path="gsel" type="boolean">
+  Enable selecting files in grid by ctrl-click
+</ParamField>
+
+<ParamField path="sort" type="string">
+  Default sort order
+  
+  ```yaml
+  flags:
+    sort: href  # sort by filename (default)
+  ```
+</ParamField>
+
+<ParamField path="nsort" type="boolean">
+  Natural-sort of leading digits in filenames (e.g., file2 before file10)
+</ParamField>
+
+<ParamField path="unlist" type="regex">
+  Don't list files matching regex
+  
+  ```yaml
+  flags:
+    unlist: ^\.
+  ```
+</ParamField>
+
+<ParamField path="dlni" type="boolean">
+  Force-download files on click (no inline preview)
+</ParamField>
+
+<ParamField path="nodirsz" type="boolean">
+  Don't show total folder size (~30% faster listings)
+</ParamField>
+
+<ParamField path="du_who" type="string" default="all">
+  Who can see disk usage info:
+  - `no` = nobody
+  - `a` = admin permission
+  - `rw` = read-write access
+  - `w` = write access
+  - `auth` = authenticated users
+  - `all` = everyone
+</ParamField>
+
+<ParamField path="ufavico" type="string">
+  Per-volume favicon URL
+  
+  ```yaml
+  flags:
+    ufavico: /icons/music.ico
+  ```
+</ParamField>
+
+<ParamField path="tcolor" type="string">
+  Theme color (hint for browsers, discord embeds)
+  
+  ```yaml
+  flags:
+    tcolor: #fc0
+  ```
+</ParamField>
+
+## Document Embedding
+
+<ParamField path="readmes" type="string" default="readme.md,README.md">
+  Files to embed as readmes
+  
+  ```yaml
+  flags:
+    readmes: README.md,readme.txt,info.md
+  ```
+</ParamField>
+
+<ParamField path="preadmes" type="string">
+  Files to embed as preadmes (before file listing)
+</ParamField>
+
+<ParamField path="prologues" type="string">
+  Files to embed above/before files
+</ParamField>
+
+<ParamField path="epilogues" type="string">
+  Files to embed below/after files
+</ParamField>
+
+<ParamField path="wo_up_readme" type="boolean">
+  Write-only users can upload prologues/epilogues without getting renamed
+</ParamField>
+
+## Security
+
+<ParamField path="nohtml" type="boolean">
+  Return HTML and markdown as text/plain (prevents XSS)
+  
+  ```yaml
+  [/uploads]
+    /mnt/uploads
+    accs:
+      w: *  # untrusted uploads
+    flags:
+      nohtml  # prevent XSS attacks
+  ```
+</ParamField>
+
+<ParamField path="robots" type="boolean">
+  Allow indexing by search engines (default)
+</ParamField>
+
+<ParamField path="norobots" type="boolean">
+  Ask search engines not to index this volume
+</ParamField>
+
+<ParamField path="dotsrch" type="boolean">
+  Show dotfiles in search results (if user can see dotfiles)
+</ParamField>
+
+<ParamField path="dots" type="boolean">
+  Allow all users with read-access to enable showing dotfiles in listings
+</ParamField>
+
+## Other Features
+
+<ParamField path="rss" type="boolean">
+  Enable RSS feeds (add `?rss` to folder URL)
+</ParamField>
+
+<ParamField path="opds" type="boolean">
+  Enable OPDS feeds for e-book readers
+</ParamField>
+
+<ParamField path="shr_who" type="string" default="auth">
+  Who can create shares:
+  - `no` = nobody
+  - `a` = admin permission
+  - `auth` = authenticated users
+</ParamField>
+
+<ParamField path="zip_who" type="string">
+  Restrict download-as-zip/tar access (0=nobody, 1=admins, 2=everyone)
+</ParamField>
+
+<ParamField path="zipmaxn" type="string">
+  Reject zip download if more than N files
+  
+  ```yaml
+  flags:
+    zipmaxn: 9k  # max 9000 files in zip
+  ```
+</ParamField>
+
+<ParamField path="zipmaxs" type="string">
+  Reject zip download if total size exceeds limit
+  
+  ```yaml
+  flags:
+    zipmaxs: 2g  # max 2 GiB zip
+  ```
+</ParamField>
+
+<ParamField path="nospawn" type="boolean">
+  Don't create volume's folder if it doesn't exist
+</ParamField>
+
+<ParamField path="assert_root" type="boolean">
+  Crash on startup if volume's folder doesn't exist
+</ParamField>
+
+## Complete Example
+
+```yaml
+[/music]
+  /mnt/music
+  accs:
+    r: *
+    rw: admin
+  flags:
+    # Database
+    e2dsa      # scan all on startup
+    e2ts       # index audio tags
+    scan: 300  # rescan every 5 minutes
+    hist: /ssd/music-cache
+    
+    # Thumbnails
+    dathumb    # no audio spectrograms
+    thsize: 320x320
+    th_qv: 60  # higher quality thumbnails
+    
+    # Client UX
+    grid       # show thumbnails by default
+    sort: n    # sort by filename
+    nsort      # natural number sorting
+    
+    # Features
+    rss        # enable RSS feeds
+    robots     # allow search engines
+```

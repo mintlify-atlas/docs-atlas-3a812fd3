@@ -1,0 +1,482 @@
+---
+title: Docker Deployment
+description: Run copyparty in Docker or Podman containers
+---
+
+## Overview
+
+Copyparty is available in multiple Docker images with different feature sets. All images are available on both Docker Hub and GitHub Container Registry, supporting multiple architectures including x86_64, ARM, and more.
+
+## Quick Start
+
+```bash
+docker run --rm -it -u 1000 -p 3923:3923 -v /mnt/nas:/w -v $PWD/cfgdir:/cfg copyparty/ac
+```
+
+- `/w` is the path inside the container that gets shared by default
+- `/cfg` is an optional folder with zero or more config files (*.conf) to load
+- `copyparty/ac` is the recommended [image edition](#available-editions)
+- If using rootless Podman, remove `-u 1000`
+- If you have SELinux, append `:z` to all `-v` args (e.g., `-v /mnt/nas:/w:z`)
+
+## Available Editions
+
+Choose the edition that matches your requirements:
+
+| Edition | Size | Features | Best For |
+|---------|------|----------|----------|
+| **min** | 57 MiB (20 gz) | Just copyparty | Minimal installs |
+| **im** | 70 MiB (25 gz) | + Pillow, Mutagen | Image thumbnails, music tags |
+| **ac** | 163 MiB (56 gz) | + FFmpeg | Video/audio thumbnails, transcoding |
+| **iv** | 211 MiB (73 gz) | + VIPS | Faster HEIF/AVIF/JXL thumbnails |
+| **dj** | 309 MiB (104 gz) | + BPM/Key detection | DJ features |
+
+<Note>
+  **ac** is recommended for most users as it provides the best balance of features and size.
+</Note>
+
+### Architecture Support
+
+- `min`, `im`, `ac`: x86, x86_64, armhf, aarch64, ppc64le, s390x
+- `iv`: x86, x86_64, armhf, aarch64
+- `dj`: x86_64, aarch64
+
+### Image Sources
+
+```bash
+# Docker Hub (default)
+docker pull copyparty/ac
+
+# GitHub Container Registry
+docker pull ghcr.io/9001/copyparty-ac
+```
+
+## Installation
+
+<Steps>
+  <Step title="Pull the image">
+    ```bash
+    docker pull copyparty/ac
+    ```
+  </Step>
+  
+  <Step title="Create configuration directory">
+    ```bash
+    mkdir -p ~/copyparty/config
+    ```
+  </Step>
+  
+  <Step title="Create configuration file">
+    Create `~/copyparty/config/copyparty.conf`:
+    
+    ```yaml
+    [global]
+      e2dsa  # enable file indexing
+      e2ts   # enable multimedia indexing
+      
+      # Store database/thumbnails in config folder (recommended)
+      hist: /cfg/hists/
+    
+    [accounts]
+      admin: your_password_here
+    
+    [/]
+      /w
+      accs:
+        r: *
+        rwmda: admin
+      flags:
+        grid
+    ```
+  </Step>
+  
+  <Step title="Run the container">
+    ```bash
+    docker run -d \
+      --name copyparty \
+      -u 1000:1000 \
+      -p 3923:3923 \
+      -v /path/to/share:/w \
+      -v ~/copyparty/config:/cfg \
+      --restart unless-stopped \
+      copyparty/ac
+    ```
+    
+    <Warning>
+      Replace `/path/to/share` with the actual directory you want to share.
+    </Warning>
+  </Step>
+</Steps>
+
+## Docker Compose
+
+Recommended for easier management:
+
+```yaml docker-compose.yml
+version: '3.8'
+
+services:
+  copyparty:
+    image: copyparty/ac
+    container_name: copyparty
+    user: "1000:1000"
+    ports:
+      - "3923:3923"
+    volumes:
+      - /path/to/share:/w
+      - ./config:/cfg
+    restart: unless-stopped
+    environment:
+      - TZ=America/New_York
+```
+
+Start with:
+```bash
+docker-compose up -d
+```
+
+<Note>
+  For Podman with systemd, you may need to run `systemctl enable --now podman.socket` first.
+</Note>
+
+## Configuration
+
+### Volume Mapping
+
+The container uses two primary mount points:
+
+- `/w` - The default web root (files to share)
+- `/cfg` - Configuration files directory
+
+#### Multiple Shared Folders
+
+```bash
+docker run -d \
+  --name copyparty \
+  -p 3923:3923 \
+  -v /mnt/music:/w/music \
+  -v /mnt/videos:/w/videos \
+  -v /mnt/documents:/w/docs \
+  -v ~/copyparty/config:/cfg \
+  copyparty/ac
+```
+
+Then configure in `copyparty.conf`:
+
+```yaml
+[/music]
+  /w/music
+  accs:
+    r: *
+
+[/videos]
+  /w/videos
+  accs:
+    r: *
+    rw: admin
+
+[/docs]
+  /w/docs
+  accs:
+    rw: admin
+```
+
+### Environment Variables
+
+```bash
+docker run -d \
+  --name copyparty \
+  -e TZ=America/New_York \
+  -e PRTY_CONFIG=/cfg/custom.conf \
+  -p 3923:3923 \
+  -v /path/to/share:/w \
+  -v ~/copyparty/config:/cfg \
+  copyparty/ac
+```
+
+### Command-Line Arguments
+
+You can pass arguments directly instead of using config files:
+
+```bash
+docker run -d \
+  --name copyparty \
+  -p 3923:3923 \
+  -v /path/to/share:/w \
+  copyparty/ac \
+  -v /w::rw \
+  -a admin:password \
+  -e2dsa -e2ts
+```
+
+## Advanced Features
+
+### FTP Server
+
+Enabling FTP in Docker requires additional configuration:
+
+<Steps>
+  <Step title="Update configuration">
+    Add to `copyparty.conf`:
+    
+    ```yaml
+    [global]
+      ftp: 3921  # FTP port
+      ftp-nat: 192.168.1.100  # Replace with your server's external IP
+      ftp-pr: 12000-12099  # Passive mode port range
+    ```
+    
+    <Warning>
+      Do not add `ftp-nat` if using host networking (`--network host`).
+    </Warning>
+  </Step>
+  
+  <Step title="Expose FTP ports">
+    ```bash
+    docker run -d \
+      --name copyparty \
+      -p 3923:3923 \
+      -p 3921:3921 \
+      -p 12000-12099:12000-12099 \
+      -v /path/to/share:/w \
+      -v ~/copyparty/config:/cfg \
+      copyparty/ac
+    ```
+  </Step>
+</Steps>
+
+### BPM and Musical Key Detection (DJ Edition)
+
+The `dj` edition includes BPM and musical key detection:
+
+```yaml copyparty.conf
+[global]
+  e2dsa, e2ts  # Enable indexing
+  mtp: .bpm=f,t30,/mtag/audio-bpm.py  # ~10sec per file
+  mtp: key=f,t190,/mtag/audio-key.py  # ~50sec per file
+
+[/music]
+  /w/music
+  flags:
+    e2dsa, e2ts
+    mtp: .bpm=f,t30,/mtag/audio-bpm.py
+    mtp: key=f,t190,/mtag/audio-key.py
+```
+
+### Performance Optimization
+
+Enable mimalloc for better performance (experimental):
+
+```bash
+docker run -d \
+  --name copyparty \
+  -e LD_PRELOAD=/usr/lib/libmimalloc-secure.so.2 \
+  -p 3923:3923 \
+  -v /path/to/share:/w \
+  -v ~/copyparty/config:/cfg \
+  copyparty/ac
+```
+
+<Warning>
+  Mimalloc doubles RAM usage but can make zip downloads 3x faster and indexing 1.5x faster.
+</Warning>
+
+## Docker-Specific Recommendations
+
+### Store .hist in Config Folder
+
+By default, copyparty creates a `.hist` folder in each volume for the database and thumbnails. Store these in the config folder instead:
+
+```yaml
+[global]
+  hist: /cfg/hists/
+```
+
+Benefits:
+- Better performance (especially with network storage)
+- Keeps shared folders clean
+- Easier backups
+
+### SELinux Systems
+
+On Fedora, RHEL, CentOS with SELinux:
+
+```bash
+docker run -d \
+  --name copyparty \
+  -p 3923:3923 \
+  -v /path/to/share:/w:z \
+  -v ~/copyparty/config:/cfg:z \
+  copyparty/ac
+```
+
+The `:z` flag relabels the content for container access.
+
+### Rootless Podman
+
+When using rootless Podman, remove the `-u` flag:
+
+```bash
+podman run -d \
+  --name copyparty \
+  -p 3923:3923 \
+  -v /path/to/share:/w \
+  -v ~/copyparty/config:/cfg \
+  copyparty/ac
+```
+
+## Container Management
+
+### Start/Stop
+
+```bash
+# Start
+docker start copyparty
+
+# Stop
+docker stop copyparty
+
+# Restart
+docker restart copyparty
+
+# Remove
+docker stop copyparty && docker rm copyparty
+```
+
+### View Logs
+
+```bash
+# Follow logs
+docker logs -f copyparty
+
+# Last 100 lines
+docker logs --tail 100 copyparty
+```
+
+### Update Container
+
+```bash
+# Pull latest image
+docker pull copyparty/ac
+
+# Stop and remove old container
+docker stop copyparty
+docker rm copyparty
+
+# Start new container with same configuration
+docker run -d \
+  --name copyparty \
+  -p 3923:3923 \
+  -v /path/to/share:/w \
+  -v ~/copyparty/config:/cfg \
+  copyparty/ac
+```
+
+With Docker Compose:
+```bash
+docker-compose pull
+docker-compose up -d
+```
+
+### Access Container Shell
+
+```bash
+# Alpine-based images use sh
+docker exec -it copyparty sh
+
+# Check copyparty version
+docker exec copyparty copyparty --version
+```
+
+## Portainer
+
+For GUI-based container management, see the [Portainer setup guide](https://github.com/9001/copyparty/blob/hovudstraum/docs/examples/docker/portainer.md).
+
+## Troubleshooting
+
+### Debian 12 Rootless Error
+
+**Error:** `failed to register layer: lsetxattr user.overlay.impure /etc: operation not supported`
+
+**Solutions:**
+1. Use Podman instead of Docker (recommended)
+2. Configure Docker to use `fuse-overlayfs` storage driver
+
+### Permission Denied
+
+Ensure the user ID matches the file owner:
+
+```bash
+# Check file ownership
+ls -la /path/to/share
+
+# Run container with matching UID:GID
+docker run -d -u 1000:1000 ...
+```
+
+### Port Already in Use
+
+```bash
+# Check what's using the port
+sudo lsof -i :3923
+
+# Use a different port
+docker run -d -p 8080:3923 ...
+```
+
+### Cannot Access from Other Machines
+
+Ensure the container binds to all interfaces:
+
+```bash
+# Explicitly bind to 0.0.0.0
+docker run -d -p 0.0.0.0:3923:3923 ...
+
+# Check firewall
+sudo firewall-cmd --list-ports
+```
+
+## Building Custom Images
+
+### From Source
+
+```bash
+# Clone repository
+git clone https://github.com/9001/copyparty.git
+cd copyparty/scripts/docker
+
+# Build all images
+./make.sh hclean pull img push
+```
+
+### Adding Python Packages
+
+To add packages without rebuilding from scratch:
+
+```dockerfile
+FROM copyparty/ac:latest
+
+RUN apk add --no-cache python3-dev gcc musl-dev && \
+    pip install --no-cache-dir your-package-name && \
+    apk del python3-dev gcc musl-dev
+```
+
+Build and run:
+```bash
+docker build -t copyparty-custom .
+docker run -d --name copyparty -p 3923:3923 copyparty-custom
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Reverse Proxy" icon="server" href="/deployment/reverse-proxy">
+    Set up nginx or Apache
+  </Card>
+  <Card title="Security" icon="shield" href="/deployment/security">
+    Harden your Docker installation
+  </Card>
+  <Card title="Systemd" icon="linux" href="/deployment/systemd">
+    Native systemd service
+  </Card>
+</CardGroup>

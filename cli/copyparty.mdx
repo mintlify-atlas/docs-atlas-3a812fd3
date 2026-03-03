@@ -1,0 +1,335 @@
+---
+title: 'copyparty'
+description: 'The main copyparty server command'
+---
+
+# copyparty
+
+The main copyparty server command starts the file sharing server with HTTP, WebDAV, and optional protocol support.
+
+## Synopsis
+
+```bash
+copyparty [OPTIONS] [-v VOLUME ...]
+```
+
+## Description
+
+copyparty is an HTTP file sharing server with features including:
+- File upload/download via web UI
+- WebDAV support
+- Optional SFTP, FTP, TFTP, SMB protocols
+- Audio/video streaming and transcoding
+- Full-text search and tagging
+- mDNS/SSDP service discovery
+- Upload deduplication
+- Event hooks and handlers
+
+## General Options
+
+<ParamField path="-c" type="path">
+  Config file path (repeatable). Allows loading configuration from file instead of command-line arguments.
+  
+  **Example:** `-c /etc/copyparty/config.txt`
+</ParamField>
+
+<ParamField path="-nc" type="integer" default="512">
+  Maximum number of concurrent client connections.
+</ParamField>
+
+<ParamField path="-a" type="string">
+  Add user account (repeatable). Format: `USERNAME:PASSWORD`
+  
+  **Example:** `-a alice:secretpass -a bob:hunter2`
+</ParamField>
+
+<ParamField path="-v" type="string">
+  Add volume/share (repeatable). Format: `SRC:DST:PERMISSIONS[:FLAGS]`
+  
+  Where:
+  - `SRC` is the local filesystem path
+  - `DST` is the URL path to mount it at
+  - `PERMISSIONS` define user access (see Permissions section)
+  - `FLAGS` are optional volume configuration flags
+  
+  **Examples:**
+  - `-v .::r` - Share current directory as read-only for everyone
+  - `-v /data/music:/music:r:rw,alice` - Share /data/music at /music, read-only for everyone, read-write for alice
+  - `-v /tmp/uploads:/up:w:c,nodupe` - Write-only upload folder with duplicate detection
+</ParamField>
+
+<ParamField path="--grp" type="string">
+  Define user group (repeatable). Format: `GROUPNAME:USER1,USER2,...`
+  
+  **Example:** `--grp admins:alice,bob,charlie`
+</ParamField>
+
+<ParamField path="--usernames" type="boolean">
+  Require both username and password for login (default is password-only).
+</ParamField>
+
+<ParamField path="--chdir" type="path">
+  Change working directory before mapping volumes.
+</ParamField>
+
+<ParamField path="-ed" type="boolean">
+  Enable the `?dots` URL parameter which allows clients to see dotfiles/hidden files.
+</ParamField>
+
+<ParamField path="--name" type="string">
+  Server name displayed in the browser UI and mDNS announcements.
+  
+  **Default:** Hostname or random identifier
+</ParamField>
+
+<ParamField path="--site" type="string">
+  Public URL to assume when creating links.
+  
+  **Example:** `--site https://files.example.com/`
+</ParamField>
+
+## Binding Options
+
+<ParamField path="-i" type="string" default="::">
+  IP addresses or unix sockets to listen on (comma-separated).
+  
+  **Examples:**
+  - `-i ::` - All IPv4 and IPv6 (default)
+  - `-i 0.0.0.0` - All IPv4 only
+  - `-i 127.0.0.1` - Localhost only
+  - `-i unix:770:www:/dev/shm/party.sock` - Unix socket with permissions
+</ParamField>
+
+<ParamField path="-p" type="string" default="3923">
+  TCP ports to listen on (comma-separated or range).
+  
+  **Examples:**
+  - `-p 3923` - Single port
+  - `-p 80,443,3923` - Multiple ports
+  - `-p 8000-8010` - Port range
+</ParamField>
+
+## Upload Options
+
+<ParamField path="--dotpart" type="boolean">
+  Prefix incomplete uploads with a dot, hiding them from clients unless `-ed` is set.
+</ParamField>
+
+<ParamField path="--dedup" type="boolean">
+  Enable symlink-based upload deduplication (volflag=dedup).
+</ParamField>
+
+<ParamField path="--hardlink" type="boolean">
+  Enable hardlink-based deduplication; falls back to symlinks when hardlinking is impossible (volflag=hardlink).
+</ParamField>
+
+<ParamField path="--no-dupe" type="boolean">
+  Reject duplicate files during upload (volflag=nodupe).
+</ParamField>
+
+<ParamField path="--u2ts" type="string" default="c">
+  How to timestamp uploaded files:
+  - `c` - Client's last-modified time
+  - `u` - Upload time
+  - `fc` - Force client time
+  - `fu` - Force upload time
+  
+  **(volflag=u2ts)**
+</ParamField>
+
+<ParamField path="--chmod-f" type="string">
+  Unix file permissions (octal) for new files.
+  
+  **Examples:**
+  - `644` - Owner RW, all read
+  - `600` - Owner RW only
+  - `666` - All RW
+  
+  **(volflag=chmod_f)**
+</ParamField>
+
+<ParamField path="--chmod-d" type="string" default="755">
+  Unix directory permissions (octal) for new directories.
+  
+  **Examples:**
+  - `755` - Owner RWX, all RX
+  - `2750` - Setgid + owner RWX + group RX
+  - `700` - Owner only
+  
+  **(volflag=chmod_d)**
+</ParamField>
+
+## Database Options
+
+<ParamField path="--dbd" type="string">
+  Database durability profile (per-volume with volflag):
+  - `acid` - Extremely safe but slow (never lose data)
+  - `swal` - 2.4x faster, 99.9% as safe
+  - `wal` - 21x faster on HDD, 90% as safe
+  - `yolo` - Fastest, risk of losing entire database on power loss
+  
+  **Example:** `--dbd=swal` or as volflag: `-v ~/music:music:r:c,dbd=acid`
+</ParamField>
+
+## TLS/SSL Options
+
+<ParamField path="--cert" type="path">
+  Path to TLS certificate file (concatenation of key and certificate chain).
+</ParamField>
+
+<ParamField path="--http-only" type="boolean">
+  Disable SSL/TLS, force plaintext HTTP only.
+</ParamField>
+
+<ParamField path="--https-only" type="boolean">
+  Disable plaintext HTTP, force TLS only.
+</ParamField>
+
+<ParamField path="--ssl-ver" type="string">
+  Set allowed SSL/TLS versions. Use `help` to list available versions.
+</ParamField>
+
+<ParamField path="--ciphers" type="string">
+  Set allowed SSL/TLS ciphers. Use `help` to list available ciphers.
+</ParamField>
+
+## Protocol Options
+
+<ParamField path="--sftp" type="integer">
+  Enable SFTP server on specified port.
+  
+  **Example:** `--sftp 3922`
+</ParamField>
+
+<ParamField path="--ftp" type="integer">
+  Enable FTP server on specified port.
+  
+  **Example:** `--ftp 3921`
+</ParamField>
+
+<ParamField path="--ftps" type="integer">
+  Enable FTPS (FTP over TLS) server on specified port.
+  
+  **Example:** `--ftps 3990`
+</ParamField>
+
+<ParamField path="--tftp" type="integer">
+  Enable TFTP server on specified port.
+  
+  **Example:** `--tftp 69`
+</ParamField>
+
+<ParamField path="--smb" type="boolean">
+  Enable SMB/CIFS server (read-only by default).
+  
+  **Warning:** Requires root on Linux/macOS unless using `--smb-port` above 1024.
+</ParamField>
+
+## Zeroconf/mDNS Options
+
+<ParamField path="-z" type="boolean">
+  Enable all zeroconf backends (mDNS, SSDP).
+</ParamField>
+
+<ParamField path="--zm" type="boolean">
+  Announce services over mDNS (multicast DNS-SD) for auto-discovery.
+</ParamField>
+
+<ParamField path="--zs" type="boolean">
+  Announce services over SSDP for Windows discovery.
+</ParamField>
+
+## Event Hooks
+
+See [Event Hooks](/cli/options#event-hooks) for detailed information.
+
+<ParamField path="--xau" type="string">
+  Execute command after file upload finishes (repeatable).
+  
+  **Example:** `--xau /scripts/notify-upload.py`
+</ParamField>
+
+<ParamField path="--xm" type="string">
+  Execute command on message (repeatable).
+  
+  **Example:** `--xm notify-send,message,--`
+</ParamField>
+
+## QR Code Options
+
+<ParamField path="--qr" type="boolean">
+  Show QR code on startup for easy mobile access.
+</ParamField>
+
+<ParamField path="--qrs" type="boolean">
+  Use HTTPS URL in QR code.
+</ParamField>
+
+<ParamField path="--qrl" type="string">
+  Location/path to include in QR code URL.
+  
+  **Example:** `--qrl "music/?pw=hunter2"`
+</ParamField>
+
+## Permissions
+
+Permissions in volume definitions:
+
+- `r` (read) - List folders, download files
+- `w` (write) - Upload files (requires `r` to see uploads)
+- `m` (move) - Move files/folders (requires `w` at destination)
+- `d` (delete) - Delete files/folders
+- `g` (get) - Download files without listing folders
+- `a` (admin) - View uploader IPs, config reload
+- `A` (all) - Same as `rwmda.`
+
+## Examples
+
+### Basic read-only server
+```bash
+copyparty
+```
+Shares current directory as read-write for everyone on port 3923.
+
+### Read-only music server with authentication
+```bash
+copyparty -a alice:secret -v /data/music:/music:r:rw,alice
+```
+Shares /data/music as read-only for everyone, read-write for alice.
+
+### Upload server with multiple users
+```bash
+copyparty \
+  -a alice:pass1 \
+  -a bob:pass2 \
+  --grp uploaders:alice,bob \
+  -v /uploads:/up:w,uploaders:rw,alice
+```
+Uploaders group can write, alice has full access.
+
+### HTTPS server with mDNS
+```bash
+copyparty \
+  --cert /etc/copyparty/cert.pem \
+  --https-only \
+  --zm \
+  -v /data/share:/share:r
+```
+HTTPS-only server with mDNS announcement.
+
+### Multi-protocol server
+```bash
+copyparty \
+  -p 80,443 \
+  --sftp 22 \
+  --ftp 21 \
+  --zm \
+  -v /data:/files:r
+```
+HTTP, HTTPS, SFTP, and FTP on standard ports.
+
+## See Also
+
+- [u2c](/cli/u2c) - Upload client
+- [partyfuse](/cli/partyfuse) - FUSE mount tool
+- [Common Options](/cli/options) - Shared options reference

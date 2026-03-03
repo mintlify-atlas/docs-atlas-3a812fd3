@@ -1,80 +1,267 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: 'Quickstart'
+description: 'Get copyparty running in under 5 minutes'
 ---
 
-## Get started in three steps
+## Get copyparty
 
-Get your documentation site running locally and make your first customization.
+The fastest way to get started is to download and run the self-extracting Python script:
 
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+<Steps>
+  <Step title="Download copyparty">
+    <Tabs>
+      <Tab title="Linux / macOS">
+        ```bash
+        # Download the self-extracting script
+        curl -LO https://github.com/9001/copyparty/releases/latest/download/copyparty-sfx.py
+        
+        # Make it executable
+        chmod +x copyparty-sfx.py
+        
+        # Run it
+        python3 copyparty-sfx.py
+        ```
+      </Tab>
+      
+      <Tab title="Windows">
+        Download [copyparty-sfx.py](https://github.com/9001/copyparty/releases/latest/download/copyparty-sfx.py) and double-click it, or run:
+        
+        ```powershell
+        python copyparty-sfx.py
+        ```
+        
+        Or download the Windows executable:
+        
+        ```powershell
+        # Download copyparty.exe
+        curl -LO https://github.com/9001/copyparty/releases/latest/download/copyparty.exe
+        
+        # Run it
+        .\copyparty.exe
+        ```
+      </Tab>
+    </Tabs>
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    <Info>
+    The sfx is a self-extractor which unpacks an embedded tar.gz into your temp directory. If this concerns you, use the [zipapp](https://github.com/9001/copyparty/releases/latest/download/copyparty.pyz) or [PyPI installation](/installation#pypi-installation) instead.
+    </Info>
+  </Step>
 
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+  <Step title="Access the web interface">
+    Open your browser and navigate to:
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
+    ```
+    http://127.0.0.1:3923
+    ```
+    
+    You should see the copyparty web interface with the current directory listed.
+    
+    <Warning>
+    By default, copyparty gives everyone **read/write access** to the current folder. This is fine for testing, but you'll want to configure proper permissions for production use.
+    </Warning>
+  </Step>
+  
+  <Step title="Install optional features (recommended)">
+    For thumbnails, media indexing, and audio transcoding:
+    
+    <Tabs>
+      <Tab title="Debian / Ubuntu">
+        ```bash
+        sudo apt install --no-install-recommends python3-pil ffmpeg
+        ```
+      </Tab>
+      
+      <Tab title="Fedora / RHEL">
+        ```bash
+        # Enable rpmfusion first
+        sudo dnf install python3-pillow ffmpeg --allowerasing
+        ```
+      </Tab>
+      
+      <Tab title="Alpine">
+        ```bash
+        sudo apk add py3-pillow ffmpeg
+        ```
+      </Tab>
+      
+      <Tab title="macOS (Homebrew)">
+        ```bash
+        brew install pillow ffmpeg
+        ```
+      </Tab>
+      
+      <Tab title="macOS (MacPorts)">
+        ```bash
+        sudo port install py-Pillow ffmpeg
+        ```
+      </Tab>
+      
+      <Tab title="Windows">
+        ```powershell
+        # Install Pillow
+        python -m pip install --user -U Pillow
+        ```
+        
+        Download FFmpeg from [ffmpeg.org](https://ffmpeg.org/download.html#build-windows) and add it to your PATH.
+        
+        <Note>
+        copyparty.exe already includes Pillow and only needs FFmpeg for video thumbnails.
+        </Note>
+      </Tab>
+      
+      <Tab title="FreeBSD">
+        ```bash
+        sudo pkg install py39-sqlite3 py39-pillow ffmpeg
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## Configure server options
+
+Now that copyparty is running, let's configure it with some recommended options:
+
+### Enable file indexing
+
+File indexing enables search, deduplication, and the "unpost" feature:
+
+```bash
+python3 copyparty-sfx.py -e2dsa
+```
+
+<Accordion title="What do these flags mean?">
+- `-e2d` - Enable database for file metadata
+- `-e2ds` - Index files on server startup
+- `-e2dsa` - Also index on file access
+- `-e2ts` - Enable audio metadata indexing (requires FFmpeg or Mutagen)
 </Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+### Set up permissions
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+Configure user accounts and volume permissions:
 
-### Step 3: Go live
+<CodeGroup>
+```bash Basic: Read-only for everyone
+python3 copyparty-sfx.py -v .::r
+```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
+```bash With user account
+# Create user 'ed' with password 'hunter2'
+# Share current folder as root, readable by anyone, read-write for ed
+python3 copyparty-sfx.py -a ed:hunter2 -v .::r:rw,ed
+```
+
+```bash Multiple volumes
+# Share /mnt/music as /music (read-only for everyone)
+# Share /mnt/uploads as /uploads (write-only for everyone, read-write for ed)
+python3 copyparty-sfx.py -a ed:hunter2 \
+  -v /mnt/music:/music:r \
+  -v /mnt/uploads:/uploads:w:rw,ed
+```
+
+```bash Private share
+# Only accessible to user 'ed'
+python3 copyparty-sfx.py -a ed:hunter2 -v .::r,ed
+```
+</CodeGroup>
+
+<Accordion title="Understanding permissions">
+The permission syntax is: `-v SOURCE:URL:PERM1:PERM2:...`
+
+- `r` - Read (browse and download)
+- `w` - Write (upload files)
+- `m` - Move files from this folder
+- `d` - Delete files
+- `a` - Admin (see upload IPs, reload config)
+- `g` - Get-only (download files but can't list folders)
+
+Format: `PERM,user1,user2` grants that permission to those users.
+
+Example: `r:rw,ed` means everyone can read, only ed can read+write.
 </Accordion>
+
+## Common scenarios
+
+<CardGroup cols={2}>
+  <Card title="Public file sharing" icon="globe">
+    Share files publicly:
+    ```bash
+    python3 copyparty-sfx.py -v ~/shared:/files:r
+    ```
+  </Card>
+  
+  <Card title="Upload dropbox" icon="cloud-arrow-up">
+    Create an anonymous upload folder:
+    ```bash
+    python3 copyparty-sfx.py -v ~/uploads:/drop:w:rw,admin -a admin:pass
+    ```
+    Anyone can upload, only admin can see files.
+  </Card>
+  
+  <Card title="Media server" icon="music">
+    Share your media library:
+    ```bash
+    python3 copyparty-sfx.py -e2ts -v ~/Music:/music:r
+    ```
+    Enables audio player and metadata search.
+  </Card>
+  
+  <Card title="Personal cloud" icon="cloud">
+    Private file storage:
+    ```bash
+    python3 copyparty-sfx.py -a user:pass -v ~:/files:rw,user
+    ```
+    Only accessible with authentication.
+  </Card>
+</CardGroup>
+
+## Make it accessible online
+
+To access copyparty from anywhere, use Cloudflare Tunnel:
+
+<Steps>
+  <Step title="Download cloudflared">
+    Get cloudflared from [Cloudflare's downloads page](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
+  </Step>
+  
+  <Step title="Start copyparty with real-IP detection">
+    ```bash
+    python3 copyparty-sfx.py --xff-hdr cf-connecting-ip
+    ```
+    
+    This tells copyparty to read the client IP from Cloudflare's header.
+  </Step>
+  
+  <Step title="Start the tunnel">
+    ```bash
+    cloudflared tunnel --url http://127.0.0.1:3923
+    ```
+    
+    Cloudflare will display a public URL like `https://random-words.trycloudflare.com` that you can share.
+  </Step>
+</Steps>
+
+<Info>
+For production deployments, see the [Deployment guides](/deployment/systemd) for systemd services, Docker, and reverse proxy setups.
+</Info>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Installation methods" icon="download" href="/installation">
+    Learn about all the ways to install copyparty
+  </Card>
+  
+  <Card title="Accounts and volumes" icon="users" href="/config/accounts-and-volumes">
+    Configure detailed permissions and user accounts
+  </Card>
+  
+  <Card title="Core features" icon="star" href="/features/uploads">
+    Explore resumable uploads, protocols, and media features
+  </Card>
+  
+  <Card title="Demo server" icon="globe" href="https://a.ocv.me/pub/demo/">
+    Try out a live copyparty instance
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

@@ -1,0 +1,216 @@
+---
+title: Introduction to copyparty
+description: Turn almost any device into a portable file server with resumable uploads, deduplication, WebDAV, SFTP, FTP, TFTP, zeroconf, media indexer, thumbnails, and write-only folders
+---
+
+## What is copyparty?
+
+copyparty is a portable file server that turns almost any device into a powerful file sharing solution with resumable uploads and downloads using any web browser.
+
+<Note>
+Built with Python (2 or 3), copyparty runs everywhere with minimal dependencies. All optional dependencies enable additional features but aren't required for core functionality.
+</Note>
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Universal browser support" icon="browser">
+    Works with any web browser, even ancient ones. Upload and download files from IE6 to modern Chrome.
+  </Card>
+  
+  <Card title="Resumable transfers" icon="rotate">
+    Uploads and downloads automatically resume after interruptions. Reboot your browser or PC and continue right where you left off.
+  </Card>
+  
+  <Card title="Multiple protocols" icon="network-wired">
+    Access your files through HTTP(S), WebDAV, SFTP, FTP(S), TFTP, and SMB/CIFS protocols.
+  </Card>
+  
+  <Card title="Media features" icon="music">
+    Built-in audio player with OS integration, video thumbnails, image gallery, and on-the-fly audio transcoding.
+  </Card>
+  
+  <Card title="File deduplication" icon="copy">
+    Content-based deduplication using symlinks. Upload the same file multiple times and it only stores one copy.
+  </Card>
+  
+  <Card title="Powerful search" icon="magnifying-glass">
+    Search by filename, path, size, date, or even MP3 tags. Drag and drop a file to find if it exists on the server.
+  </Card>
+  
+  <Card title="Write-only folders" icon="lock">
+    Create drop zones where users can upload files but can't see what others have uploaded.
+  </Card>
+  
+  <Card title="No filesize limits" icon="infinity">
+    Upload files of any size, even through Cloudflare. The up2k uploader chunks large files intelligently.
+  </Card>
+</CardGroup>
+
+## Why copyparty?
+
+### Runs anywhere
+
+copyparty is designed with maximum portability in mind:
+
+- Cross-platform: Windows, Linux, macOS, Android, iOS, FreeBSD, and more
+- Minimal dependencies: Python is all you need for core features
+- Works on ancient and modern systems alike
+- No build steps required - modify JavaScript and Python code directly
+
+### Powerful upload system
+
+copyparty's up2k uploader is truly resumable:
+
+- Files are processed in chunks with checksums
+- Uploads auto-resume after network interruptions
+- Resume even after rebooting your browser or computer
+- Server detects corruption and client re-uploads affected chunks
+- Handles files of any size with no limits
+
+<Warning>
+It's perfectly safe to restart or upgrade copyparty while someone is uploading. All known up2k clients will resume automatically.
+</Warning>
+
+### Rich media experience
+
+The built-in media player handles almost every audio format:
+
+- OS integration for lockscreen controls on Windows, iOS, and Android
+- Audio waveform display in the seekbar
+- Nearly gapless playback for albums
+- FFmpeg transcoding for unsupported formats
+- Video files can be played as audio-only
+
+### Flexible permissions
+
+Granular per-folder, per-user permissions:
+
+- `r` (read): Browse and download files
+- `w` (write): Upload files
+- `m` (move): Move files between folders
+- `d` (delete): Delete files and folders
+- `g` (get): Download files by direct URL only, no browsing
+- `a` (admin): See upload times, IPs, and reload config
+
+## Backend capabilities
+
+<AccordionGroup>
+  <Accordion title="Protocol support">
+    - **HTTP/HTTPS**: Primary web interface
+    - **WebDAV**: Mount as network drive
+    - **SFTP**: Secure file transfers (~700 MiB/s)
+    - **FTP/FTPS**: Traditional file transfer
+    - **TFTP**: Simple transfers for embedded devices
+    - **SMB/CIFS**: Windows network shares
+  </Accordion>
+  
+  <Accordion title="Network features">
+    - IPv6 and unix sockets support
+    - Multiprocessing for true multithreading
+    - Reverse-proxy support
+    - Zeroconf/mDNS/SSDP announcements
+    - QR code generation for quick access
+    - Cloudflare tunnel integration
+  </Accordion>
+  
+  <Accordion title="Upload features">
+    - Basic multipart upload (IE6 compatible)
+    - up2k: Resumable, multithreaded uploads
+    - Stash: Simple PUT file dropper
+    - Filename randomizer
+    - Write-only folders
+    - Unpost: Undo accidental uploads (default 12 hours)
+    - Self-destruct: Auto-delete after specified time
+    - Race the beam: Download while still uploading
+    - Symlink/discard duplicates based on content
+  </Accordion>
+  
+  <Accordion title="Download features">
+    - Single file downloads
+    - Download folders as ZIP or TAR archives
+    - Audio transcoding to opus/mp3 on-the-fly
+    - FUSE client for mounting as filesystem
+    - Resume interrupted downloads
+  </Accordion>
+  
+  <Accordion title="Browser interface">
+    - Directory tree sidebar (navpane)
+    - File manager with cut/paste/delete/batch-rename
+    - Audio player with OS media controls
+    - Image gallery with WebM player
+    - CBZ manga/comics reader
+    - Text file viewer with syntax highlighting and live streaming
+    - Markdown viewer and editor
+    - Grid view with thumbnails
+    - Multilingual UI (English, Norwegian, Chinese)
+    - Single Page App (browse while uploading)
+  </Accordion>
+  
+  <Accordion title="Indexing and search">
+    - File content indexing
+    - Search by name, path, date, size
+    - Search by ID3 tags and metadata
+    - Locate files by SHA512 hash
+    - File deduplication detection
+  </Accordion>
+</AccordionGroup>
+
+## Use cases
+
+<CardGroup cols={2}>
+  <Card title="Emergency file transfer" icon="bolt">
+    Quick drop-in service to transfer files between any devices, even ancient systems. No setup required.
+  </Card>
+  
+  <Card title="Home media server" icon="house">
+    Stream your music collection from anywhere with transcoding support and a beautiful player interface.
+  </Card>
+  
+  <Card title="Secure file drop" icon="inbox">
+    Create write-only folders where people can send you files without seeing what others uploaded.
+  </Card>
+  
+  <Card title="Team file sharing" icon="users">
+    Per-folder, per-user permissions with accounts, volumes, and flexible access controls.
+  </Card>
+</CardGroup>
+
+## Platform support
+
+copyparty runs on an impressive range of platforms:
+
+- Windows (7 and newer)
+- Linux (all distributions)
+- macOS
+- Android (via Termux)
+- iOS (via a-Shell)
+- FreeBSD
+- Architectures: x86, x86_64, ARM32/ARM64, ppc64le, s390x, RISC-V, even SGI IRIX
+
+## Philosophy
+
+copyparty follows an "inverse unix philosophy" - do all the things, and do an okay job:
+
+- Quick drop-in service to get many features in a pinch
+- Run anywhere, support everything
+- As many web browsers and Python versions as possible
+- Minimal dependencies (optional ones add bonus features)
+- No preparation necessary - just run the SFX
+- Adaptable, malleable, hackable - no build steps needed
+
+<Info>
+Built in Norway with contributions from around the world. Available under the MIT license.
+</Info>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get copyparty running in under 5 minutes
+  </Card>
+  
+  <Card title="Installation" icon="download" href="/installation">
+    Detailed installation instructions for all platforms
+  </Card>
+</CardGroup>

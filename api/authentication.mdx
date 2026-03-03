@@ -1,0 +1,432 @@
+---
+title: Authentication
+description: Authenticate API requests using headers, cookies, or URL parameters
+---
+
+copyparty supports multiple authentication methods to suit different clients and use cases.
+
+## Authentication Methods
+
+Authentication is attempted in the following order:
+
+1. **URL Parameter** (`?pw=`)
+2. **HTTP Header** (`PW:`)
+3. **Basic Auth** (`Authorization: Basic`)
+4. **Cookies** (`cppwd` or `cppws`)
+
+The first non-empty authentication method is used.
+
+## URL Parameter Authentication
+
+Include password in the URL:
+
+```bash
+curl http://server:3923/folder/?pw=yourpassword
+```
+
+### With Username
+
+If server has `--usernames` enabled:
+
+```bash
+curl http://server:3923/folder/?pw=username:password
+```
+
+<ParamField query="pw" type="string">
+  Authentication credentials. Format:
+  - `password` - Password only (default)
+  - `username:password` - If `--usernames` is enabled
+</ParamField>
+
+### Security Notes
+
+<Warning>
+  - URL parameters appear in server logs and browser history
+  - Can be disabled server-side with `--pw-urlp=A`
+  - Only use over HTTPS or on trusted networks
+</Warning>
+
+### Configuration
+
+Server can rename or disable URL parameter authentication:
+
+```bash
+# Disable URL parameter auth
+copyparty --pw-urlp=A
+
+# Rename parameter to 'token'
+copyparty --pw-urlp=token
+```
+
+## HTTP Header Authentication
+
+Use the `PW` header for authentication:
+
+```bash
+curl -H "PW: yourpassword" \
+  http://server:3923/folder/
+```
+
+### With Username
+
+```bash
+curl -H "PW: username:password" \
+  http://server:3923/folder/
+```
+
+<ParamField header="PW" type="string">
+  Authentication credentials in `password` or `username:password` format
+</ParamField>
+
+### Custom Header Name
+
+Server can rename or disable the PW header:
+
+```bash
+# Disable PW header auth
+copyparty --pw-hdr=A
+
+# Rename to 'X-Auth-Token'
+copyparty --pw-hdr=x-auth-token
+```
+
+Then use:
+
+```bash
+curl -H "X-Auth-Token: password" \
+  http://server:3923/folder/
+```
+
+## Basic Authentication
+
+Standard HTTP Basic Auth:
+
+```bash
+curl -u username:password \
+  http://server:3923/folder/
+```
+
+Or manually:
+
+```bash
+curl -H "Authorization: Basic $(echo -n 'username:password' | base64)" \
+  http://server:3923/folder/
+```
+
+<ParamField header="Authorization" type="string">
+  Format: `Basic base64(username:password)`
+</ParamField>
+
+### Disable Basic Auth
+
+```bash
+copyparty --no-bauth
+```
+
+## Cookie Authentication
+
+After successful login via web interface, cookies are set:
+
+- **HTTP**: `cppwd=hashed-password`
+- **HTTPS**: `cppws=hashed-password`
+
+```bash
+curl -b "cppwd=abc123def456" \
+  http://server:3923/folder/
+```
+
+<ParamField header="Cookie" type="string">
+  Format:
+  - `cppwd=hash` for HTTP connections
+  - `cppws=hash` for HTTPS connections
+</ParamField>
+
+<Info>
+  Cookie values are hashed passwords, not plaintext. Obtain them from browser after login.
+</Info>
+
+## Account Configuration
+
+Define accounts in server config:
+
+### Command Line
+
+```bash
+copyparty -a username:password
+```
+
+### Config File
+
+```yaml
+[accounts]
+  alice: hunter2
+  bob: correcthorsebatterystaple
+  admin: secretpassword123
+```
+
+## Permissions
+
+Accounts can have different permissions per volume:
+
+| Permission | Code | Description |
+|------------|------|-------------|
+| Read | `r` | Browse folders, download files |
+| Write | `w` | Upload files |
+| Move | `m` | Move files from this folder |
+| Delete | `d` | Delete files and folders |
+| Get | `g` | Download files only (no browsing) |
+| UpGet | `G` | Upload + receive filekeys |
+| HTML | `h` | Serve index.html in folders |
+| Admin | `a` | See upload metadata, reload config |
+| Dots | `.` | See dotfiles in listings |
+| All | `A` | Equivalent to `rwmda.` |
+
+### Example: Volume Permissions
+
+```yaml
+[/music]
+  /mnt/music
+  accs:
+    r: alice, bob      # Read-only for alice and bob
+    rw: admin          # Read-write for admin
+    g: *               # Anyone can download if they have the URL
+```
+
+## Authentication Examples
+
+### Upload with Password
+
+```bash
+curl -X POST \
+  -H "PW: mypassword" \
+  -F "f=@file.txt" \
+  http://server:3923/uploads/
+```
+
+### Download with Basic Auth
+
+```bash
+curl -u alice:hunter2 \
+  http://server:3923/files/document.pdf -o document.pdf
+```
+
+### Search with Header Auth
+
+```bash
+curl -X POST \
+  -H "PW: admin:secretpass" \
+  -H "Content-Type: application/json" \
+  -d '{"q": "test"}' \
+  http://server:3923/
+```
+
+### List Files with URL Auth
+
+```bash
+curl "http://server:3923/folder/?ls&pw=alice:hunter2"
+```
+
+## Security Features
+
+### Failed Login Bans
+
+Default ban policy (configurable with `--ban-pw`):
+
+- **9 failed attempts** within 1 hour
+- Results in **24 hour ban**
+
+```bash
+# Custom ban policy: 5 failures in 30 min = 12 hour ban
+copyparty --ban-pw 5,1800,43200
+```
+
+### Password Hashing
+
+Passwords can be hashed in config files:
+
+```bash
+# Generate hashed password
+copyparty --ah-gen hunter2
+```
+
+Output:
+```
+alice: $2b$12$abc123def456...
+```
+
+Use in config:
+
+```yaml
+[accounts]
+  alice: $2b$12$abc123def456...
+```
+
+<Info>
+  Hashed passwords use Argon2 or bcrypt. See [Password Hashing](https://github.com/9001/copyparty#password-hashing) for details.
+</Info>
+
+### IP-Based Authentication
+
+Auto-login from specific IP ranges:
+
+```bash
+# Allow 192.168.1.0/24 as user 'alice' without password
+copyparty --ipa alice@192.168.1.0/24
+```
+
+### Restrict Users to IP Ranges
+
+Limit user access by IP:
+
+```yaml
+[accounts]
+  alice: hunter2
+    ipa: 192.168.1.0/24, 10.0.0.0/8
+```
+
+## Authentication Headers in Responses
+
+When authentication fails:
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Basic realm="a"
+```
+
+Client should retry with credentials.
+
+## Logout
+
+Logout (clear cookies):
+
+```bash
+curl "http://server:3923/?pw=x"
+```
+
+<ParamField query="pw" type="string" default="x">
+  Set to `x` to logout and clear authentication cookies
+</ParamField>
+
+## Multi-Account Groups
+
+Create groups of users:
+
+```yaml
+[groups]
+  admins: alice, bob
+  users: charlie, dave
+
+[/data]
+  /mnt/data
+  accs:
+    rw: @admins    # alice and bob have read-write
+    r: @users      # charlie and dave have read-only
+```
+
+### Built-in Groups
+
+- `@acct` - All logged-in users
+- `*` - Everyone (including anonymous)
+
+### Exclude from Group
+
+```yaml
+[/public]
+  /mnt/public
+  accs:
+    r: *, -@acct   # Only anonymous users (not logged in)
+```
+
+## Identity Providers
+
+Replace password auth with OAuth/OIDC:
+
+```bash
+# GitHub OAuth
+copyparty --idp github
+
+# Generic OIDC
+copyparty --idp oidc,https://accounts.google.com
+```
+
+See [Identity Providers](https://github.com/9001/copyparty#identity-providers) for configuration.
+
+## Best Practices
+
+<Tip>
+  - Use HTTPS for all authentication in production
+  - Prefer header or basic auth over URL parameters
+  - Use strong passwords or password hashing
+  - Configure IP restrictions for sensitive accounts
+  - Enable `--usernames` if multiple users need same password
+  - Use groups for easier permission management
+</Tip>
+
+<Warning>
+  - Don't share URLs containing `?pw=` parameter
+  - Don't log passwords in client applications
+  - Implement retry delays for failed authentications
+  - Monitor server logs for authentication failures
+</Warning>
+
+## Troubleshooting
+
+### Authentication Not Working
+
+1. Check if auth method is enabled:
+   - URL param: Not disabled with `--pw-urlp=A`
+   - Header: Not disabled with `--pw-hdr=A`
+   - Basic: Not disabled with `--no-bauth`
+
+2. Verify username format:
+   - Without `--usernames`: Use `?pw=password`
+   - With `--usernames`: Use `?pw=username:password`
+
+3. Check account permissions:
+   - User has appropriate permission (`r`, `w`, etc.)
+   - Path is within allowed volumes
+
+### Failed Login Bans
+
+If you're banned:
+
+```bash
+# Wait for ban duration (default 24h)
+# Or have admin clear bans (restart server)
+```
+
+Check current ban settings:
+
+```bash
+copyparty --help | grep ban-pw
+```
+
+## Advanced Configuration
+
+### User-Changeable Passwords
+
+Allow users to change their own passwords:
+
+```bash
+copyparty --pwd-wl alice,bob
+```
+
+Users can then change passwords via web interface.
+
+### Header-Based Authentication
+
+Authenticate via reverse proxy headers:
+
+```bash
+copyparty --xh-name=X-User --xh-pw=X-Password
+```
+
+Proxy must set these headers.
+
+## Reference
+
+- Authentication is evaluated per-request
+- No sessions (except cookies from web UI)
+- Permissions are per-volume
+- First matching auth method is used
+- Failed auth triggers ban counter

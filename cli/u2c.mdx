@@ -1,0 +1,327 @@
+---
+title: 'u2c.py'
+description: 'Upload files to copyparty server'
+---
+
+# u2c.py
+
+The `u2c.py` (upload to copyparty) client is a standalone Python script for uploading files and folders to a copyparty server using the up2k protocol.
+
+## Synopsis
+
+```bash
+python u2c.py [OPTIONS] URL FILES...
+```
+
+## Description
+
+u2c.py is a robust upload client with features including:
+- Parallel uploads with configurable connections
+- Multi-threaded file hashing
+- Automatic resume of interrupted uploads
+- File deduplication (only uploads missing chunks)
+- File search mode
+- Progress tracking with ETA
+- Cross-platform (Python 2.6+ and 3.3+)
+- Zero dependencies
+
+## Required Arguments
+
+<ParamField path="url" type="string" required>
+  Server URL including destination folder.
+  
+  **Examples:**
+  - `http://192.168.1.100:3923/uploads/`
+  - `https://files.example.com/music/albums/`
+</ParamField>
+
+<ParamField path="files" type="string" required>
+  Files and/or folders to upload (multiple allowed).
+  
+  **Note:** Uses rsync-style syntax:
+  - `foo` uploads entire folder to URL/foo/
+  - `foo/` uploads contents of folder into URL/
+</ParamField>
+
+## Authentication Options
+
+<ParamField path="-a" type="string">
+  Password for copyparty authentication (sent in 'PW' header).
+  
+  Can be:
+  - Plain password: `-a hunter2`
+  - Username:password if `--usernames` enabled: `-a alice:hunter2`
+  - Path to file containing password: `-a $~/.copyparty-pass`
+</ParamField>
+
+<ParamField path="--ba" type="string">
+  Password for HTTP basic authentication (usually not necessary).
+</ParamField>
+
+## Upload Behavior
+
+<ParamField path="-s" type="boolean">
+  Search mode - search for files instead of uploading.
+</ParamField>
+
+<ParamField path="--ok" type="boolean">
+  Continue even if some local files are inaccessible.
+</ParamField>
+
+<ParamField path="--touch" type="boolean">
+  If last-modified timestamps differ, push local timestamp to server.
+  
+  **Requires:** Write and delete permissions on server.
+</ParamField>
+
+<ParamField path="--ow" type="boolean">
+  Overwrite existing files instead of auto-renaming.
+</ParamField>
+
+<ParamField path="--owo" type="boolean">
+  Overwrite existing files only if server file is older.
+</ParamField>
+
+<ParamField path="-x" type="string">
+  Skip files matching regex pattern (repeatable).
+  
+  **Example:** `-x '.*/\.git/.*' -x '.*\.tmp$'`
+</ParamField>
+
+## Output Options
+
+<ParamField path="-v" type="boolean">
+  Verbose output (show detailed errors).
+</ParamField>
+
+<ParamField path="-u" type="boolean">
+  Print list of download links after all uploads finish.
+</ParamField>
+
+<ParamField path="-ud" type="boolean">
+  Print download link after each upload finishes.
+</ParamField>
+
+<ParamField path="-uf" type="path">
+  Write list of download links to file.
+  
+  **Example:** `-uf ~/upload-links.txt`
+</ParamField>
+
+<ParamField path="--spd" type="boolean">
+  Print upload/hash speeds for each file.
+</ParamField>
+
+## Performance Options
+
+<ParamField path="-j" type="integer" default="2">
+  Number of parallel upload connections.
+  
+  **Recommended:**
+  - `1-2` for low latency (same country)
+  - `2-4` for mobile clients
+  - `2-6` for high latency (cross-continental)
+  
+  **Note:** Maximum is 6 in most browsers.
+</ParamField>
+
+<ParamField path="-J" type="integer" default="3">
+  Number of CPU cores to use for hashing.
+  
+  **Values:**
+  - `0` or `1` - Single-threaded hashing
+  - `2-4` - Recommended for most systems
+  - Higher values show diminishing returns
+</ParamField>
+
+<ParamField path="--sz" type="integer" default="64">
+  Target POST size in MiB (tries to make each upload this big).
+</ParamField>
+
+<ParamField path="--szm" type="integer" default="96">
+  Maximum POST size in MiB (never exceed this).
+  
+  **Note:** Cloudflare maximum is 96 MiB.
+</ParamField>
+
+<ParamField path="-nh" type="boolean">
+  Disable hashing while uploading (reduces parallelism).
+</ParamField>
+
+<ParamField path="-z" type="boolean">
+  Skip files if they exist at destination with similar timestamp.
+  
+  **Note:** Like turbo mode but even faster; skips files without hashing.
+</ParamField>
+
+<ParamField path="--safe" type="boolean">
+  Use simple fallback approach (no parallelism, easier to debug).
+</ParamField>
+
+<ParamField path="--cxp" type="float" default="57">
+  Assume HTTP connections expire after this many seconds.
+</ParamField>
+
+<ParamField path="--cd" type="float" default="5">
+  Delay in seconds before retrying failed handshake/upload.
+</ParamField>
+
+<ParamField path="--t-hs" type="float" default="186">
+  Crash if handshakes fail due to server offline for this many seconds.
+</ParamField>
+
+## Folder Sync Options
+
+<ParamField path="--dl" type="boolean">
+  Delete local files after successful upload.
+</ParamField>
+
+<ParamField path="--dr" type="boolean">
+  Delete remote files that don't exist locally (implies `--ow`).
+</ParamField>
+
+<ParamField path="--drd" type="boolean">
+  Delete remote files during upload instead of after.
+  
+  **Note:** Reduces peak disk usage but will re-upload instead of detecting renames.
+</ParamField>
+
+## File-ID Calculator
+
+When URL is `-`, u2c calculates and lists file warks (identifiers) instead of uploading.
+
+<ParamField path="--wsalt" type="string" default="hunter2">
+  Salt for creating warks (must match server config).
+</ParamField>
+
+<ParamField path="--chs" type="boolean">
+  Verbose mode - print hash/offset of each chunk in each file.
+</ParamField>
+
+<ParamField path="--jw" type="boolean">
+  Just print identifier + filepath (omit mtime/size).
+</ParamField>
+
+## TLS/SSL Options
+
+<ParamField path="-te" type="path">
+  Path to CA certificate or server certificate to verify.
+  
+  **Example:** `-te /path/to/cert.pem`
+</ParamField>
+
+<ParamField path="-teh" type="boolean">
+  Require correct hostname in certificate.
+</ParamField>
+
+<ParamField path="-td" type="boolean">
+  Disable TLS certificate verification (insecure).
+</ParamField>
+
+## Compatibility Options
+
+<ParamField path="--cls" type="boolean">
+  Clear screen before starting upload.
+</ParamField>
+
+<ParamField path="--rh" type="integer" default="0">
+  Resolve hostname N times before upload.
+  
+  **Note:** Good for buggy networks but breaks TLS certificate validation.
+</ParamField>
+
+<ParamField path="-ns" type="boolean">
+  No status panel (for slow consoles and macOS).
+</ParamField>
+
+## Examples
+
+### Basic upload
+```bash
+python u2c.py http://192.168.1.100:3923/ ~/photos/
+```
+Upload contents of photos folder to server root.
+
+### Upload with authentication
+```bash
+python u2c.py -a hunter2 http://server:3923/uploads/ file.zip
+```
+Upload single file with password.
+
+### Fast parallel upload
+```bash
+python u2c.py -j 4 -J 4 http://server:3923/docs/ ~/Documents/
+```
+Use 4 parallel connections and 4 CPU cores for hashing.
+
+### Resume-friendly upload
+```bash
+python u2c.py -j 2 --safe http://server:3923/backup/ /data/
+```
+Upload with automatic resume if interrupted.
+
+### Sync folder
+```bash
+python u2c.py --dr -z http://server:3923/mirror/ ~/sync/
+```
+Sync folder, deleting remote files not present locally.
+
+### Search for files
+```bash
+python u2c.py -s http://server:3923/ "vacation-2024*.jpg"
+```
+Search for matching files on server.
+
+### Upload with links
+```bash
+python u2c.py -ud -uf links.txt http://server:3923/share/ *.pdf
+```
+Upload PDFs and save download links to file.
+
+### Calculate file IDs
+```bash
+python u2c.py - ~/files/ --wsalt mysecret
+```
+Generate warks for files without uploading.
+
+## Technical Details
+
+### Up2k Protocol
+
+The up2k protocol used by u2c:
+
+1. **Hashing** - Files are split into chunks (1-32 MiB) and SHA-512 hashed
+2. **Handshake** - Client sends chunk hashes to server
+3. **Server Response** - Server indicates which chunks are needed
+4. **Upload** - Only missing chunks are uploaded
+5. **Assembly** - Server assembles file from chunks
+
+This enables:
+- Deduplication (same file uploaded once)
+- Resume (interrupted uploads continue from where they left off)
+- Bandwidth savings (only new data is transferred)
+
+### Chunk Size Selection
+
+Chunk sizes are automatically selected based on file size:
+- Files < 256 MiB: 1 MiB chunks
+- Files 256 MiB - 8 GiB: 2-8 MiB chunks
+- Files > 8 GiB: Up to 32 MiB chunks
+
+This ensures optimal deduplication and server performance.
+
+### File Naming
+
+By rsync convention:
+- `folder` creates URL/folder/ with folder contents
+- `folder/` uploads contents directly into URL/
+
+## Exit Codes
+
+- `0` - Success
+- `1` - Error (authentication failed, server offline, etc.)
+
+## See Also
+
+- [copyparty](/cli/copyparty) - Main server command
+- [partyfuse](/cli/partyfuse) - FUSE mount client

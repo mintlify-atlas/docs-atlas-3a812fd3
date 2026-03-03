@@ -1,0 +1,505 @@
+---
+title: 'Common Options'
+description: 'Command-line options reference'
+---
+
+# Common Command-Line Options
+
+This page documents common command-line options and concepts shared across copyparty tools.
+
+## Volume Permissions
+
+Permissions control what users can do within a volume. Specified in volume definitions after the mount path.
+
+### Permission Flags
+
+<ParamField path="r" type="permission">
+  **Read** - List folder contents and download files.
+</ParamField>
+
+<ParamField path="w" type="permission">
+  **Write** - Upload files. Requires `r` to see the uploads.
+</ParamField>
+
+<ParamField path="m" type="permission">
+  **Move** - Move files and folders. Requires `w` at destination.
+</ParamField>
+
+<ParamField path="d" type="permission">
+  **Delete** - Permanently delete files and folders.
+</ParamField>
+
+<ParamField path="g" type="permission">
+  **Get** - Download files without seeing folder contents.
+</ParamField>
+
+<ParamField path="G" type="permission">
+  **Upget** - Like `g`, but can see filekeys of own uploads.
+</ParamField>
+
+<ParamField path="h" type="permission">
+  **HTML** - Like `g`, but folders return their index.html.
+</ParamField>
+
+<ParamField path="." type="permission">
+  **Dots** - User can request to show dotfiles in listings.
+</ParamField>
+
+<ParamField path="a" type="permission">
+  **Admin** - View uploader IPs, trigger config reload.
+</ParamField>
+
+<ParamField path="A" type="permission">
+  **All** - Same as `rwmda.` (read/write/move/delete/admin/dots).
+</ParamField>
+
+### Permission Examples
+
+```bash
+# Read-only for everyone
+-v /data/music:/music:r
+
+# Read-write for alice, read-only for everyone else
+-v /data/share:/share:r:rw,alice
+
+# Write-only upload folder for everyone, full access for bob
+-v /uploads:/up:w:rwd,bob
+
+# Admin-only access
+-v /admin:/admin::a,admin
+
+# Group-based permissions
+--grp editors:alice,bob,charlie
+-v /docs:/docs:r:rw,editors:a,admin
+```
+
+## Volume Flags
+
+Volume flags (volflags) modify volume behavior. Specified after permissions with `:c,flag1,flag2`.
+
+### Upload Flags
+
+<ParamField path="nodupe" type="volflag">
+  Reject duplicate files during upload.
+  
+  **Example:** `-v /tmp/inc:/inc:w:c,nodupe`
+</ParamField>
+
+<ParamField path="dedup" type="volflag">
+  Enable symlink-based upload deduplication.
+</ParamField>
+
+<ParamField path="hardlink" type="volflag">
+  Use hardlinks for deduplication (falls back to symlinks).
+</ParamField>
+
+<ParamField path="u2ts" type="volflag">
+  How to timestamp uploaded files: `c` (client), `u` (upload-time), `fc`, `fu`.
+</ParamField>
+
+<ParamField path="put_name" type="volflag">
+  Filename pattern for nameless uploads.
+  
+  **Default:** `put-{now.6f}-{cip}.bin`
+</ParamField>
+
+### Filesystem Flags
+
+<ParamField path="chmod_f" type="volflag">
+  Unix file permissions (octal) for new files.
+  
+  **Example:** `chmod_f=644`
+</ParamField>
+
+<ParamField path="chmod_d" type="volflag">
+  Unix directory permissions (octal) for new directories.
+  
+  **Example:** `chmod_d=755`
+</ParamField>
+
+<ParamField path="dbd" type="volflag">
+  Database durability profile: `acid`, `swal`, `wal`, `yolo`.
+  
+  **Example:** `-v ~/music:music:r:c,dbd=swal`
+</ParamField>
+
+<ParamField path="nosub" type="volflag">
+  Prevent creating subdirectories.
+</ParamField>
+
+### Display Flags
+
+<ParamField path="dots" type="volflag">
+  Enable the `?dots` URL parameter to show hidden files.
+</ParamField>
+
+<ParamField path="scandir" type="volflag">
+  Display subdirectory contents in upload page (slow).
+</ParamField>
+
+<ParamField path="th_conv" type="volflag">
+  Thumbnail conversion quality/size.
+</ParamField>
+
+### Access Control Flags
+
+<ParamField path="davauth" type="volflag">
+  Force authentication for all folders (required by davfs2).
+</ParamField>
+
+<ParamField path="shr_who" type="volflag">
+  Who can create shares: `no`, `a` (admin), `auth` (authenticated).
+</ParamField>
+
+<ParamField path="unp_who" type="volflag">
+  Who can undo uploads: `0` (none), `1` (same IP+account), `2` (same IP), `3` (same account).
+</ParamField>
+
+## Event Hooks
+
+Event hooks execute commands before/after various events. Can be global options or volume flags.
+
+### Hook Types
+
+<ParamField path="xbu" type="hook">
+  Execute command **before** a file upload starts.
+  
+  **Arguments:** File path or JSON info
+</ParamField>
+
+<ParamField path="xau" type="hook">
+  Execute command **after** a file upload finishes.
+  
+  **Arguments:** File path or JSON info
+</ParamField>
+
+<ParamField path="xiu" type="hook">
+  Execute command **after** all uploads finish and volume is idle.
+  
+  **Arguments:** List of uploaded files (JSON on stdin)
+  
+  **Note:** Batches multiple uploads, runs once after idle period.
+</ParamField>
+
+<ParamField path="xbc" type="hook">
+  Execute command **before** a file copy.
+</ParamField>
+
+<ParamField path="xac" type="hook">
+  Execute command **after** a file copy.
+</ParamField>
+
+<ParamField path="xbr" type="hook">
+  Execute command **before** a file rename/move.
+</ParamField>
+
+<ParamField path="xar" type="hook">
+  Execute command **after** a file rename/move.
+</ParamField>
+
+<ParamField path="xbd" type="hook">
+  Execute command **before** a file delete.
+</ParamField>
+
+<ParamField path="xad" type="hook">
+  Execute command **after** a file delete.
+</ParamField>
+
+<ParamField path="xm" type="hook">
+  Execute command when a message is posted.
+  
+  **Arguments:** Message text or JSON
+</ParamField>
+
+<ParamField path="xban" type="hook">
+  Execute command when someone gets banned.
+  
+  **Return:** 0 (true) to cancel the ban
+</ParamField>
+
+### Hook Flags
+
+Prefix hooks with comma-separated flags:
+
+**Execution:**
+- `f` - Fork process, don't wait for completion
+- `c` - Check return code, block action if non-zero
+- `w
+N` - Wait N seconds after command starts
+- `tN` - Set N second timeout
+- `iN` - (xiu only) Volume idle time in seconds (default 5)
+- `I` - Import and run as module (140x faster)
+
+**Input/Output:**
+- `j` - Provide JSON info as 1st argument instead of filepath
+- `s` - Provide data on stdin instead of argument
+- `c0` - Show all output (default)
+- `c1` - Show only stderr
+- `c2` - Show only stdout  
+- `c3` - Mute all output
+
+**Permissions:**
+- `ar` - Only run if user has read permission
+- `arw` - Only run if user has read+write
+- `arwmd` - Only run if user has all permissions
+
+**Timeout:**
+- `kt` - Kill process tree on timeout (default)
+- `km` - Kill main process only
+- `kn` - Let it run until copyparty terminates
+
+### Hook Examples
+
+```bash
+# Notify on upload completion
+--xau /scripts/notify-upload.sh
+
+# Log messages to file with stdin
+--xm s,,tee,-a,messages.log
+
+# Run hook as Python module (fast)
+--xau I,/scripts/process_upload.py
+
+# ZeroMQ announcement
+--xau zmq:pub:tcp://*:5556
+
+# Only run for users with write access
+--xau aw,/scripts/process.py
+
+# Check return code and block upload if fails
+--xbu c,/scripts/validate.sh
+
+# Batch processing when idle
+--xiu i10,/scripts/batch-process.py
+```
+
+## Authentication Options
+
+### Password Hashing
+
+<ParamField path="--ah-alg" type="string" default="none">
+  Password hashing algorithm:
+  - `none` - Plaintext (default, not recommended for production)
+  - `argon2` - Argon2id (recommended)
+  - `scrypt` - Scrypt
+  - `sha2` - SHA2-512
+  
+  **Example:** `--ah-alg argon2`
+</ParamField>
+
+<ParamField path="--ah-gen" type="string">
+  Generate hashed password for the given plaintext.
+  
+  **Example:** `--ah-gen hunter2`
+</ParamField>
+
+### IdP / SSO Integration
+
+<ParamField path="--idp-h-usr" type="string">
+  HTTP header containing username from IdP (repeatable).
+  
+  **Warning:** Ensure clients cannot set this header!
+  
+  **Example:** `--idp-h-usr Remote-User`
+</ParamField>
+
+<ParamField path="--idp-h-grp" type="string">
+  HTTP header containing groups from IdP.
+  
+  **Example:** `--idp-h-grp Remote-Groups`
+</ParamField>
+
+<ParamField path="--idp-h-key" type="string">
+  Secret header that must be present to trust IdP headers.
+  
+  **Example:** `--idp-h-key X-Secret-Key`
+</ParamField>
+
+<ParamField path="--auth-ord" type="string" default="idp,ipu">
+  Authentication precedence order.
+  
+  **Options:** `pw` (password), `idp` (identity provider), `ipu` (IP-based)
+  
+  **Examples:**
+  - `pw,idp,ipu` - Try password first
+  - `ipu,idp,pw` - IP auth wins
+  - `idp` - Only IdP authentication
+</ParamField>
+
+### IP-Based Authentication
+
+<ParamField path="--ipu" type="string">
+  Auto-authenticate IPs as specific user (repeatable).
+  
+  Format: `CIDR=USERNAME`
+  
+  **Example:** `--ipu 192.168.1.0/24=alice --ipu 10.0.0.5=bob`
+</ParamField>
+
+<ParamField path="--ipr" type="string">
+  Restrict user to specific IPs (repeatable).
+  
+  Format: `CIDR1,CIDR2=USERNAME`
+  
+  **Example:** `--ipr 192.168.1.0/24,10.0.0.0/8=alice`
+</ParamField>
+
+## Database Durability Profiles
+
+Controls how aggressively the database is synced to disk.
+
+<ParamField path="acid" type="profile">
+  **Extremely safe but slow** - Never lose data, even in power loss.
+  
+  Best for: Critical data, single points of failure
+</ParamField>
+
+<ParamField path="swal" type="profile">
+  **2.4x faster, 99.9% as safe** - May lose metadata for ~200 recent uploads in power loss.
+  
+  Best for: General use, good balance of speed and safety
+</ParamField>
+
+<ParamField path="wal" type="profile">
+  **21x faster on HDD, 90% as safe** - Higher risk of metadata loss.
+  
+  Best for: High-volume uploads, HDD arrays
+</ParamField>
+
+<ParamField path="yolo" type="profile">
+  **Fastest, removes upload pauses** - Risk of losing entire database.
+  
+  Best for: Temporary data, SSD caching, reproducible uploads
+</ParamField>
+
+### Setting Durability
+
+```bash
+# Global default
+copyparty --dbd=swal
+
+# Per-volume
+-v ~/music:music:r:c,dbd=acid
+-v /tmp/cache:cache:rw:c,dbd=yolo
+```
+
+## File Permissions (chmod)
+
+Unix file permission settings for new files and directories.
+
+### Permission Bits
+
+**User, Group, Other** digits:
+- `0` = `---` (no access)
+- `1` = `--x` (execute)
+- `2` = `-w-` (write)
+- `3` = `-wx` (write + execute)
+- `4` = `r--` (read)
+- `5` = `r-x` (read + execute)
+- `6` = `rw-` (read + write)
+- `7` = `rwx` (read + write + execute)
+
+**Special** digit (optional 4th digit):
+- `1` = Sticky bit
+- `2` = Setgid
+- `4` = Setuid
+
+### Common Examples
+
+```bash
+# Files
+--chmod-f 644   # Owner RW, all read
+--chmod-f 600   # Owner RW only
+--chmod-f 666   # All RW
+--chmod-f 444   # All read-only
+
+# Directories  
+--chmod-d 755   # Owner RWX, all RX
+--chmod-d 700   # Owner only
+--chmod-d 2750  # Setgid + owner RWX + group RX
+--chmod-d 777   # All access (not recommended)
+```
+
+## Environment Variables
+
+<ParamField path="PRTY_CONFIG" type="path">
+  Default config file path (same as `-c`).
+</ParamField>
+
+<ParamField path="PRTY_NO_TLS" type="boolean">
+  Disable TLS/SSL support entirely.
+</ParamField>
+
+<ParamField path="PRTY_NO_TPOKE" type="boolean">
+  Disable timestamp touching in SFX builds.
+</ParamField>
+
+## Config File Format
+
+Config files use INI-style format with `[global]` and `[volume]` sections.
+
+### Example Config
+
+```ini
+[global]
+# Server settings
+name: My Files
+port: 80,443
+cert: /etc/copyparty/cert.pem
+
+# Users and groups
+a: alice:hunter2
+a: bob:secret123
+grp: admins:alice
+grp: users:bob
+
+# Upload settings
+dedup: true
+chmod-f: 644
+chmod-d: 755
+
+[/data/music]
+# Music volume
+r: *
+rw: admins
+
+[/data/uploads]
+# Upload volume  
+w: users
+rw: admins
+c: nodupe
+c: u2ts=u
+```
+
+### Config Sections
+
+- `[global]` - Server-wide settings (maps to `--option`)
+- `[/path]` or `[path:alias]` - Volume definitions
+  - First line specifies permissions
+  - Following lines are volume flags
+
+### Loading Configs
+
+```bash
+# Single config
+copyparty -c /etc/copyparty/server.conf
+
+# Multiple configs (merged)
+copyparty -c base.conf -c overrides.conf
+
+# Via environment
+export PRTY_CONFIG=/etc/copyparty/default.conf
+copyparty
+```
+
+## Exit Codes
+
+- `0` - Success
+- `1` - Error (authentication failed, port in use, etc.)
+- `130` - Interrupted (Ctrl+C)
+
+## See Also
+
+- [copyparty](/cli/copyparty) - Main server documentation
+- [u2c](/cli/u2c) - Upload client
+- [partyfuse](/cli/partyfuse) - FUSE mount client

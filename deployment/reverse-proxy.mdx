@@ -1,0 +1,522 @@
+---
+title: Reverse Proxy Setup
+description: Configure nginx, Apache, Caddy, or Cloudflare in front of copyparty
+---
+
+## Overview
+
+Running copyparty behind a reverse proxy provides several benefits:
+- Automatic HTTPS/TLS certificate management
+- HTTP/2 and HTTP/3 support
+- Better isolation and security
+- Host multiple services on the same ports (80/443)
+- Load balancing and caching capabilities
+
+<Warning>
+  Proper configuration of client IP detection is critical. Without it, all requests will appear to come from the proxy, breaking rate limiting and bans.
+</Warning>
+
+## Configuration Methods
+
+You can deploy copyparty behind a reverse proxy in two ways:
+
+### Subdomain Proxying (Recommended)
+
+Dedicate a subdomain to copyparty:
+- `https://files.example.com` → copyparty
+- Simpler configuration
+- Better performance
+- Fewer edge cases
+
+### Path-Based Proxying
+
+Mount copyparty under a path:
+- `https://example.com/files` → copyparty
+- Requires `--rp-loc /files` argument
+- Slight performance cost
+- More complex setup
+
+## Client IP Detection
+
+Copyparty needs to know the real client IP for rate limiting, bans, and logging.
+
+<Steps>
+  <Step title="Configure your reverse proxy">
+    Ensure your proxy sends the correct header:
+    
+    - **Most proxies:** `X-Forwarded-For`
+    - **Cloudflare:** `CF-Connecting-IP`
+    - **Custom:** Any header name you configure
+  </Step>
+  
+  <Step title="Configure copyparty">
+    Tell copyparty which header to trust:
+    
+    ```yaml
+    [global]
+      xff-hdr: x-forwarded-for  # or cf-connecting-ip for Cloudflare
+      xff-src: 192.168.1.1      # IP of your reverse proxy
+      rproxy: 1                 # Trust the header
+    ```
+    
+    **Header contains single IP (most cases):**
+    ```yaml
+    rproxy: 1
+    ```
+    
+    **Header contains multiple IPs (CDN chain):**
+    ```yaml
+    rproxy: -1  # Rightmost IP (nearest proxy)
+    rproxy: -2  # Second from right (usually correct)
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  If you see "thank you for playing" messages, your IP detection is misconfigured and the proxy itself is getting banned.
+</Warning>
+
+## nginx Configuration
+
+Recommended for best performance and compatibility.
+
+### Subdomain Setup
+
+<Steps>
+  <Step title="Start copyparty with unix socket">
+    Using unix sockets is 5-10% faster and more secure:
+    
+    ```bash
+    copyparty -i unix:770:www:/dev/shm/party.sock
+    ```
+    
+    Or with TCP:
+    ```bash
+    copyparty -i 127.0.0.1:3923
+    ```
+  </Step>
+  
+  <Step title="Create nginx configuration">
+    Create `/etc/nginx/conf.d/copyparty.conf`:
+    
+    ```nginx
+    # Unix socket upstream (recommended)
+    upstream cpp_uds {
+        server unix:/dev/shm/party.sock fail_timeout=1s;
+        keepalive 1;
+    }
+    
+    # Or TCP upstream
+    upstream cpp_tcp {
+        server 127.0.0.1:3923 fail_timeout=1s;
+        keepalive 1;
+    }
+    
+    server {
+        listen 443 ssl http2;
+        listen [::]:443 ssl http2;
+        
+        server_name files.example.com;
+        
+        # SSL configuration (use certbot or your cert manager)
+        ssl_certificate /etc/letsencrypt/live/files.example.com/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/files.example.com/privkey.pem;
+        
+        location / {
+            # Use cpp_uds or cpp_tcp
+            proxy_pass http://cpp_uds;
+            proxy_redirect off;
+            
+            # Disable buffering for better upload/download performance
+            proxy_http_version 1.1;
+            client_max_body_size 0;
+            proxy_buffering off;
+            proxy_request_buffering off;
+            
+            # Improve download speed
+            proxy_buffers 32 8k;
+            proxy_buffer_size 16k;
+            proxy_busy_buffers_size 24k;
+            
+            # Headers
+            proxy_set_header Connection        "Keep-Alive";
+            proxy_set_header Host              $host;
+            proxy_set_header X-Real-IP         $remote_addr;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        }
+    }
+    
+    # HTTP to HTTPS redirect
+    server {
+        listen 80;
+        listen [::]:80;
+        server_name files.example.com;
+        return 301 https://$server_name$request_uri;
+    }
+    
+    # Global settings
+    client_max_body_size 1024M;
+    client_header_timeout 610m;
+    client_body_timeout 610m;
+    send_timeout 610m;
+    ```
+  </Step>
+  
+  <Step title="Configure copyparty">
+    ```yaml
+    [global]
+      i: unix:770:www:/dev/shm/party.sock  # or 127.0.0.1
+      xff-hdr: x-forwarded-for
+      xff-src: 127.0.0.1  # or your nginx server IP
+      rproxy: 1
+    ```
+  </Step>
+  
+  <Step title="SELinux (Fedora/RHEL)">
+    Allow nginx to connect:
+    
+    ```bash
+    setsebool -P httpd_can_network_connect 1
+    ```
+  </Step>
+  
+  <Step title="Test and reload">
+    ```bash
+    nginx -t
+    systemctl reload nginx
+    ```
+  </Step>
+</Steps>
+
+### Path-Based Setup
+
+For mounting copyparty at a subpath like `/files`:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name example.com;
+    
+    location /files/ {
+        proxy_pass http://cpp_tcp/files/;
+        # ... same proxy settings as above ...
+    }
+}
+```
+
+And start copyparty with:
+```bash
+copyparty --rp-loc /files
+```
+
+### Cloudflare + nginx
+
+If using Cloudflare in front of nginx:
+
+<Steps>
+  <Step title="Restrict to Cloudflare IPs">
+    Generate and include Cloudflare IP allowlist:
+    
+    ```bash
+    curl -s https://www.cloudflare.com/ips-v{4,6} | \
+      sed 's/^/allow /; s/$/;/' > /etc/nginx/cloudflare-only.conf
+    echo 'deny all;' >> /etc/nginx/cloudflare-only.conf
+    ```
+  </Step>
+  
+  <Step title="Update nginx config">
+    ```nginx
+    server {
+        listen 443 ssl http2;
+        server_name files.example.com;
+        
+        # Restrict to Cloudflare
+        include /etc/nginx/cloudflare-only.conf;
+        
+        location / {
+            proxy_pass http://cpp_uds;
+            # Use Cloudflare's real IP header
+            proxy_set_header X-Forwarded-For $http_cf_connecting_ip;
+            # ... other settings ...
+        }
+    }
+    ```
+  </Step>
+  
+  <Step title="Configure copyparty">
+    ```yaml
+    [global]
+      xff-hdr: cf-connecting-ip
+      rproxy: 1
+    ```
+  </Step>
+</Steps>
+
+## Apache Configuration
+
+<Steps>
+  <Step title="Enable required modules">
+    ```bash
+    a2enmod proxy proxy_http headers
+    systemctl restart apache2
+    ```
+  </Step>
+  
+  <Step title="Create virtual host">
+    Create `/etc/apache2/sites-available/copyparty.conf`:
+    
+    ```apache
+    <VirtualHost *:443>
+        ServerName files.example.com
+        
+        SSLEngine on
+        SSLCertificateFile /etc/letsencrypt/live/files.example.com/fullchain.pem
+        SSLCertificateKeyFile /etc/letsencrypt/live/files.example.com/privkey.pem
+        
+        RequestHeader set "X-Forwarded-Proto" expr=%{REQUEST_SCHEME}
+        
+        # Subdomain proxying to unix socket (best)
+        ProxyPass "/" "unix:///dev/shm/party.sock|http://whatever/"
+        
+        # Or subdomain proxying to TCP
+        # ProxyPass "/" "http://127.0.0.1:3923/"
+        
+        # Or path-based proxying (requires --rp-loc /files)
+        # ProxyPass "/files" "http://127.0.0.1:3923/files"
+        
+        # Do NOT use ProxyPassReverse
+    </VirtualHost>
+    
+    <VirtualHost *:80>
+        ServerName files.example.com
+        Redirect permanent / https://files.example.com/
+    </VirtualHost>
+    ```
+  </Step>
+  
+  <Step title="Enable site">
+    ```bash
+    a2ensite copyparty
+    systemctl reload apache2
+    ```
+  </Step>
+  
+  <Step title="SELinux (Fedora/RHEL)">
+    ```bash
+    setsebool -P httpd_can_network_connect 1
+    ```
+  </Step>
+</Steps>
+
+## Caddy Configuration
+
+Caddy automatically handles HTTPS certificates via Let's Encrypt.
+
+### Subdomain Setup
+
+```caddyfile
+files.example.com {
+    # Unix socket (recommended)
+    reverse_proxy unix//dev/shm/party.sock
+    
+    # Or TCP
+    # reverse_proxy 127.0.0.1:3923
+}
+```
+
+### Path-Based Setup
+
+```caddyfile
+example.com {
+    route /files/* {
+        reverse_proxy 127.0.0.1:3923
+    }
+}
+```
+
+Start copyparty with `--rp-loc /files`.
+
+### Command-Line Usage
+
+```bash
+# Unix socket
+caddy reverse-proxy --from :8080 --to unix///dev/shm/party.sock
+
+# TCP
+caddy reverse-proxy --from :8081 --to http://127.0.0.1:3923
+```
+
+## Cloudflare Tunnel
+
+For quick deployment without exposing ports or managing certificates:
+
+<Steps>
+  <Step title="Install cloudflared">
+    ```bash
+    # Download from https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+    wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+    sudo mv cloudflared-linux-amd64 /usr/local/bin/cloudflared
+    sudo chmod +x /usr/local/bin/cloudflared
+    ```
+  </Step>
+  
+  <Step title="Quick tunnel (temporary URL)">
+    ```bash
+    cloudflared tunnel --url http://127.0.0.1:3923
+    ```
+    
+    Cloudflare will assign a random URL like `https://random-words.trycloudflare.com`.
+  </Step>
+  
+  <Step title="Permanent tunnel (custom domain)">
+    1. Go to Cloudflare Dashboard → Zero Trust → Networks → Tunnels
+    2. Create a tunnel → Cloudflared
+    3. Choose subdomain (e.g., `files.example.com`)
+    4. Service type: `HTTP`, URL: `127.0.0.1:3923`
+    5. Copy and run the provided command
+  </Step>
+  
+  <Step title="Configure copyparty for Cloudflare">
+    ```yaml
+    [global]
+      xff-hdr: cf-connecting-ip
+      rproxy: 1
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  Cloudflare Tunnels work well with CGNAT and restrictive firewalls since they establish outbound connections.
+</Note>
+
+## Performance Comparison
+
+Benchmark results using unix sockets:
+
+| Proxy | Requests/s | Upload | Download |
+|-------|-----------|--------|----------|
+| None | 28,900 | 6,900 MB/s | 7,400 MB/s |
+| haproxy | 18,750 | 3,500 MB/s | 2,370 MB/s |
+| caddy | 9,900 | 3,750 MB/s | 2,200 MB/s |
+| nginx | 18,700 | 2,200 MB/s | 1,570 MB/s |
+| apache | 9,700 | 1,750 MB/s | 1,830 MB/s |
+
+<Note>
+  Unix sockets provide 5-10% better performance than TCP connections.
+</Note>
+
+## Troubleshooting
+
+### Incorrect --rp-loc Error
+
+**Error:** `incorrect --rp-loc or webserver config; expected vpath starting with [...]`
+
+**Cause:** Proxy is stripping the location prefix from URLs.
+
+**Solution:** Ensure the proxy passes the full path:
+```nginx
+# Correct
+location /files/ {
+    proxy_pass http://backend/files/;
+}
+
+# Wrong
+location /files/ {
+    proxy_pass http://backend/;
+}
+```
+
+### Thumbnails Return 404
+
+**Cause:** Proxy strips query parameters (`?th=w`).
+
+**Solution:** Check proxy cache settings and URL rewrite rules.
+
+### Getting Banned Immediately
+
+**Cause:** Client IP detection is wrong, proxy IP is getting banned.
+
+**Solution:**
+1. Check copyparty logs for helpful messages
+2. Verify `--xff-hdr`, `--xff-src`, and `--rproxy` settings
+3. See [docs/xff.md](https://github.com/9001/copyparty/blob/hovudstraum/docs/xff.md)
+
+### 502 Bad Gateway
+
+**Causes:**
+1. Copyparty isn't running
+2. Wrong socket/port configuration
+3. Permissions issue with unix socket
+
+**Solutions:**
+```bash
+# Check copyparty status
+systemctl status copyparty
+
+# Verify socket exists and has correct permissions
+ls -la /dev/shm/party.sock
+
+# Check proxy can access it
+sudo -u www-data curl --unix-socket /dev/shm/party.sock http://localhost/
+```
+
+### Upload Fails with Large Files
+
+**Cause:** Proxy timeout or size limits.
+
+**Solution:**
+```nginx
+# nginx
+client_max_body_size 0;  # Unlimited
+client_body_timeout 610m;
+proxy_read_timeout 610m;
+```
+
+```apache
+# Apache
+LimitRequestBody 0
+Timeout 36600
+```
+
+## SSL/TLS Best Practices
+
+### Let's Encrypt with Certbot
+
+```bash
+# Install certbot
+sudo apt install certbot python3-certbot-nginx
+
+# Get certificate (nginx)
+sudo certbot --nginx -d files.example.com
+
+# Get certificate (apache)
+sudo certbot --apache -d files.example.com
+
+# Auto-renewal is typically configured automatically
+```
+
+### Manual SSL Configuration
+
+For nginx:
+```nginx
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256';
+ssl_prefer_server_ciphers on;
+ssl_session_cache shared:SSL:10m;
+ssl_session_timeout 10m;
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Security Hardening" icon="shield" href="/deployment/security">
+    Harden your reverse proxy setup
+  </Card>
+  <Card title="Docker Deployment" icon="docker" href="/deployment/docker">
+    Run behind proxy in Docker
+  </Card>
+  <Card title="Systemd Service" icon="linux" href="/deployment/systemd">
+    Configure systemd service
+  </Card>
+</CardGroup>

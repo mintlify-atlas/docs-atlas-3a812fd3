@@ -1,0 +1,232 @@
+---
+title: 'File Sharing Setup'
+description: 'Set up basic file sharing with copyparty for downloads and uploads'
+---
+
+## Overview
+
+copyparty makes it easy to share files with others, whether for simple downloads or collaborative uploads. This guide covers setting up basic file sharing with customizable permissions.
+
+## Quick Start
+
+The simplest file sharing server shares your current directory with everyone:
+
+```bash
+python copyparty-sfx.py
+```
+
+This gives everyone read/write access to the current folder at `http://your-ip:3923/`.
+
+## Basic File Sharing Scenarios
+
+<Steps>
+
+### Share a folder (read-only)
+
+Make a folder available for download without allowing uploads:
+
+```bash
+python copyparty-sfx.py -v /mnt/share:/files:r
+```
+
+- `/mnt/share` - Local folder on your server
+- `/files` - URL path (access at `http://your-ip:3923/files`)
+- `r` - Read-only permission for everyone
+
+### Share with password protection
+
+Create a user account and restrict access:
+
+```bash
+python copyparty-sfx.py -a alice:secret123 -v /mnt/share:/files:r,alice
+```
+
+- `-a alice:secret123` - Creates user `alice` with password `secret123`
+- `r,alice` - Only user `alice` can read/download
+
+### Allow uploads from anyone
+
+Let anyone upload files to a folder:
+
+```bash
+python copyparty-sfx.py -v /mnt/uploads:/drop:w
+```
+
+- `w` - Write-only permission (upload but cannot see files)
+- Users can upload but cannot browse or download
+
+### Mixed permissions
+
+Combine different access levels for different users:
+
+```bash
+python copyparty-sfx.py -a bob:pass1 -a carol:pass2 \
+  -v /mnt/files:/files:r:rw,bob:A,carol
+```
+
+- Everyone can read (first `r`)
+- User `bob` can read and write (`rw,bob`)
+- User `carol` has full admin access (`A,carol`)
+
+</Steps>
+
+## Configuration File Approach
+
+For complex setups, use a configuration file instead of command-line arguments:
+
+<CodeGroup>
+
+```yaml sharing.conf
+[accounts]
+  bob: pass1
+  carol: pass2
+
+[/files]
+  /mnt/files
+  accs:
+    r: *       # everyone can read
+    rw: bob    # bob can read-write
+    A: carol   # carol has admin access
+
+[/drop]
+  /mnt/uploads
+  accs:
+    w: *       # anyone can upload
+    rw: carol  # carol can manage uploads
+```
+
+```bash Command
+python copyparty-sfx.py -c sharing.conf
+```
+
+</CodeGroup>
+
+## Enabling File Indexing
+
+For better performance and features like duplicate detection:
+
+```bash
+python copyparty-sfx.py -e2dsa -v /mnt/share:/files:r
+```
+
+- `-e2dsa` - Scan and index all files on startup
+- Enables search, prevents duplicate uploads
+- Creates `.hist/up2k.db` database in each volume
+
+## Sharing Links with Passwords
+
+You can include passwords directly in URLs:
+
+```
+http://your-server:3923/files?pw=secret123
+```
+
+If `--usernames` is enabled, use `username:password`:
+
+```
+http://your-server:3923/files?pw=alice:secret123
+```
+
+## Creating Temporary Shares
+
+Enable the shares feature to let users create temporary links:
+
+```bash
+python copyparty-sfx.py --shr /share -a alice:pass -v /mnt/files::rw,alice
+```
+
+Users can then:
+1. Navigate to a file or folder
+2. Click the "share" button (bottom-right)
+3. Set expiration time and optional password
+4. Share the generated link
+
+Shares appear at `http://your-server:3923/share/...`
+
+## Making It Accessible Online
+
+<Tabs>
+  <Tab title="Cloudflare Tunnel">
+    Quick way to make your server accessible over the internet:
+
+    ```bash
+    # Install cloudflared, then:
+    cloudflared tunnel --url http://127.0.0.1:3923
+    ```
+
+    Add to copyparty:
+    ```bash
+    python copyparty-sfx.py --xff-hdr cf-connecting-ip -v /mnt/share:/files:r
+    ```
+  </Tab>
+
+  <Tab title="Port Forwarding">
+    Forward port 3923 on your router to your server's local IP.
+
+    For better security, run with HTTPS:
+    ```bash
+    python copyparty-sfx.py --https 3923 -v /mnt/share:/files:r
+    ```
+  </Tab>
+</Tabs>
+
+## Permission Reference
+
+| Permission | Description |
+|------------|-------------|
+| `r` | Read: browse folders, download files |
+| `w` | Write: upload files |
+| `m` | Move: move files FROM this folder |
+| `d` | Delete: delete files/folders |
+| `g` | Get: download files only (no browsing) |
+| `G` | Upget: like `g` but uploaders see their filekeys |
+| `a` | Admin: see upload times, IPs, reload config |
+| `A` | All: shortcut for `rwmda` |
+
+## Tips and Best Practices
+
+<AccordionGroup>
+  <Accordion title="Prevent accidental deletions">
+    Don't give `d` (delete) permission unless necessary. Use `rw` instead of `A` for regular users.
+  </Accordion>
+
+  <Accordion title="Monitor uploads">
+    Add the admin permission to see who uploaded what:
+
+    ```bash
+    python copyparty-sfx.py -a admin:secret -v /mnt/files::r:A,admin
+    ```
+  </Accordion>
+
+  <Accordion title="Set upload size limits">
+    Restrict file sizes and total volume:
+
+    ```yaml
+    [/uploads]
+      /mnt/uploads
+      accs:
+        w: *
+      flags:
+        sz: 1k-100m    # files between 1KB and 100MB
+        vmaxb: 10g     # total volume max 10GB
+        df: 5g         # keep 5GB free disk space
+    ```
+  </Accordion>
+
+  <Accordion title="Enable unpost feature">
+    Let users delete their own uploads within a time window:
+
+    ```bash
+    python copyparty-sfx.py -e2d --unpost 43200 -v /mnt/uploads::w
+    ```
+
+    Users can undo uploads within 12 hours (43200 seconds).
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+- Set up a [media server](/guides/media-server) for audio/video streaming
+- Configure [write-only folders](/guides/write-only-folders) for anonymous uploads
+- Enable [deduplication](/guides/deduplication) to save disk space
+- Set up [authentication](/guides/authentication) with SSO

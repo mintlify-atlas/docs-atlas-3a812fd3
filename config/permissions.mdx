@@ -1,0 +1,449 @@
+---
+title: Permission System
+description: Complete guide to copyparty's permission flags and access control
+---
+
+Copyparty uses a flexible permission system with single-letter flags to control user access to volumes.
+
+## Permission Flags
+
+### Read Permissions
+
+<ParamField path="r" type="read">
+  **Full read access**
+  
+  - Browse folder contents
+  - Download individual files
+  - Download folders as zip/tar
+  - See filekeys and dirkeys
+  - View file metadata and properties
+  
+  ```yaml
+  accs:
+    r: *  # everyone can read
+  ```
+</ParamField>
+
+<ParamField path="g" type="get">
+  **Get-only access** (no browsing)
+  
+  - Download files by direct URL only
+  - Cannot see folder contents
+  - Cannot download as zip/tar
+  - Useful for "hotlink" scenarios
+  
+  ```yaml
+  accs:
+    g: *  # anyone with the URL can download
+  ```
+  
+  <Info>
+  Often combined with [filekeys](/config/volflags#filekeys-and-dirkeys) to prevent URL guessing.
+  </Info>
+</ParamField>
+
+<ParamField path="G" type="upget">
+  **Upload-get access**
+  
+  Same as `g` but uploaders can see their own [filekeys](/config/volflags#filekeys-and-dirkeys).
+  
+  - Upload files
+  - Receive working direct link after upload
+  - Cannot see other users' uploads
+  - Cannot browse folder
+  
+  ```yaml
+  [/sharex]
+    /mnt/screenshots
+    accs:
+      wG: *  # anonymous upload, get links back
+    flags:
+      fk: 4  # 4-character filekeys required
+  ```
+</ParamField>
+
+<ParamField path="h" type="html">
+  **HTML-only access**
+  
+  Same as `g` except:
+  - Folders return their `index.html` file
+  - Filekeys not required for `index.html`
+  - Useful for static website hosting
+  
+  ```yaml
+  accs:
+    h: *  # serve static HTML site
+  ```
+</ParamField>
+
+### Write Permissions
+
+<ParamField path="w" type="write">
+  **Upload permission**
+  
+  - Upload new files
+  - Move/copy files *into* this folder
+  - Create new subdirectories
+  - **Requires `r` permission to see uploaded files**
+  
+  ```yaml
+  accs:
+    rw: alice  # alice can read and write
+    w: bob     # bob can upload but not see files (write-only)
+  ```
+</ParamField>
+
+<ParamField path="m" type="move">
+  **Move permission**
+  
+  - Move files/folders *from* this folder to another
+  - Rename files within the folder
+  - **Requires `w` permission at destination**
+  
+  ```yaml
+  [/incoming]
+    /mnt/incoming
+    accs:
+      w: *    # anyone can upload
+      rm: ed  # ed can browse and move files out
+  ```
+</ParamField>
+
+<ParamField path="d" type="delete">
+  **Delete permission**
+  
+  - Permanently delete files
+  - Permanently delete folders
+  - Cannot be undone (unless using unpost feature)
+  
+  ```yaml
+  accs:
+    rwd: admin  # admin can read, write, delete
+  ```
+</ParamField>
+
+### Special Permissions
+
+<ParamField path="." type="dots">
+  **Dotfiles permission**
+  
+  User can enable the option to show dotfiles (hidden files) in listings.
+  
+  - See files/folders starting with `.`
+  - Toggle visibility in settings
+  - Dotfiles still accessible by direct URL regardless
+  
+  ```yaml
+  accs:
+    r.: alice  # alice can read + see dotfiles
+  ```
+  
+  See [dotfiles configuration](/config/accounts-and-volumes#dotfiles) for more details.
+</ParamField>
+
+<ParamField path="a" type="admin">
+  **Admin permission**
+  
+  - See upload timestamps
+  - See uploader IP addresses
+  - Reload configuration
+  - Access control panel features
+  - View system information
+  
+  ```yaml
+  accs:
+    ra: admin  # admin can read + admin features
+  ```
+</ParamField>
+
+<ParamField path="A" type="all">
+  **All permissions combined**
+  
+  Shortcut for `rwmda.` (read/write/move/delete/admin/dotfiles)
+  
+  ```yaml
+  accs:
+    A: superuser  # superuser has all permissions
+  ```
+</ParamField>
+
+## Permission Combinations
+
+### Common Patterns
+
+<AccordionGroup>
+  <Accordion title="Public Read-Only">
+    ```yaml
+    [/public]
+      /mnt/public
+      accs:
+        r: *  # everyone can browse and download
+    ```
+  </Accordion>
+  
+  <Accordion title="Write-Only Drop Box">
+    ```yaml
+    [/dropbox]
+      /mnt/dropbox
+      accs:
+        w: *     # anyone can upload
+        A: admin # admin has full access
+      flags:
+        e2d      # enable database for tracking uploads
+        nodupe   # reject duplicate files
+    ```
+  </Accordion>
+  
+  <Accordion title="User-Specific Folders">
+    ```yaml
+    [/alice]
+      /mnt/users/alice
+      accs:
+        A: alice   # alice has full control
+        r: admin   # admin can view
+    
+    [/bob]
+      /mnt/users/bob
+      accs:
+        A: bob
+        r: admin
+    ```
+  </Accordion>
+  
+  <Accordion title="Collaborative Workspace">
+    ```yaml
+    [groups]
+      team: alice, bob, charlie
+    
+    [/workspace]
+      /mnt/team
+      accs:
+        rwmd: @team  # team members can manage files
+        r: guest     # guest has read-only access
+    ```
+  </Accordion>
+  
+  <Accordion title="Anonymous Upload with Links">
+    ```yaml
+    [/share]
+      /mnt/share
+      accs:
+        wG: *    # anyone can upload and get links
+        A: admin # admin can manage everything
+      flags:
+        e2d
+        fk: 6    # 6-character filekeys
+        d2t      # disable metadata parsing (security)
+        dthumb   # disable thumbnails (security)
+    ```
+  </Accordion>
+  
+  <Accordion title="Static Website Hosting">
+    ```yaml
+    [/site]
+      /var/www/site
+      accs:
+        h: *     # serve index.html to everyone
+        rw: dev  # developer can update files
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Permission Precedence
+
+### User Groups
+
+Permissions can be granted to:
+- Individual users: `alice`, `bob`
+- Groups: `@team`, `@admins`
+- Everyone: `*`
+- Logged-in users: `@acct`
+
+### Granting and Revoking
+
+```yaml
+accs:
+  r: *,-@acct     # everyone EXCEPT logged-in users
+  r: @team,-alice # team members except alice
+  rw: @admins     # all admins have read-write
+```
+
+<Info>
+Permissions are additive within a user's grants. A user with both `r` and `w` can read and write.
+</Info>
+
+## Volume Inheritance
+
+Permissions do **not** inherit from parent volumes. Each volume has independent permissions.
+
+```yaml
+[/]           # root volume
+  /srv
+  accs:
+    r: *      # everyone can read root
+
+[/private]    # sub-volume with different permissions
+  /srv/private
+  accs:
+    r: admin  # only admin can read /private
+```
+
+Visitors can see that `/private` exists (from the root volume) but cannot open it unless they have permission.
+
+## Authentication Requirements
+
+### Password Protection
+
+Volumes require authentication if no `*` (everyone) permission is granted:
+
+```yaml
+# Requires login
+[/secured]
+  /mnt/secured
+  accs:
+    r: alice, bob  # only alice and bob can access
+
+# No login required
+[/public]
+  /mnt/public
+  accs:
+    r: *  # everyone can access
+```
+
+### Mixed Access
+
+```yaml
+[/mixed]
+  /mnt/mixed
+  accs:
+    r: *       # everyone can read
+    w: alice   # only alice can write (requires login)
+```
+
+## Advanced Features
+
+### Unpost Permission
+
+The `--unpost` feature allows users to delete their own recent uploads even without `d` permission.
+
+```yaml
+[global]
+  e2d            # required for unpost
+  unpost: 43200  # 12 hours (default)
+  unp-who: 1     # 1=same IP+account, 2=same IP, 3=same account
+
+[/uploads]
+  /mnt/uploads
+  accs:
+    w: *  # anyone can upload
+    # anyone can undo their own uploads for 12 hours
+```
+
+### Append Permission
+
+Control who can append to existing files:
+
+```yaml
+[global]
+  apnd-who: dw  # delete+write required to append (default)
+  # Options: no, aw (admin+write), dw, w
+
+[/logs]
+  /var/logs
+  accs:
+    rw: logger  # logger can write and append
+  flags:
+    apnd_who: w  # override: write permission is enough
+```
+
+### Edit Permission
+
+By default, editing files requires `rwd` (read+write+delete). The `--rw-edit` option changes this:
+
+```yaml
+[global]
+  rw-edit: md,txt  # only need rw for .md and .txt files
+
+[/docs]
+  /mnt/docs
+  accs:
+    rw: editor  # can edit markdown/txt (not delete)
+  flags:
+    rw_edit: md,txt,conf  # per-volume override
+```
+
+## Security Best Practices
+
+<Warning>
+**Important security considerations:**
+
+1. **Write-only folders** (`w` without `r`) prevent uploaders from seeing what they uploaded
+2. **Get-only access** (`g`) should be combined with [filekeys](/config/volflags#filekeys-and-dirkeys) to prevent URL guessing
+3. **Admin permission** (`a`) reveals uploader IPs - grant carefully
+4. **Delete permission** (`d`) is permanent - consider using unpost instead
+</Warning>
+
+<Steps>
+  <Step title="Start with minimal permissions">
+    Begin with read-only (`r`) and add write permissions as needed
+  </Step>
+  
+  <Step title="Use groups for teams">
+    Create groups instead of listing individual users repeatedly
+  </Step>
+  
+  <Step title="Separate admin volumes">
+    Create dedicated volumes for admin-only content
+  </Step>
+  
+  <Step title="Enable unpost for safety">
+    Use `--unpost` to allow users to undo accidental uploads
+  </Step>
+  
+  <Step title="Review regularly">
+    Audit permissions periodically, especially for `a` and `d`
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="User can upload but not see files">
+    User has `w` but not `r` permission. Add `r` for visibility:
+    ```yaml
+    accs:
+      rw: user  # both read and write
+    ```
+  </Accordion>
+  
+  <Accordion title="User cannot move files between folders">
+    Moving requires `m` permission at source and `w` at destination:
+    ```yaml
+    [/source]
+      accs:
+        rm: user  # can read and move FROM here
+    
+    [/dest]
+      accs:
+        w: user   # can write (move) TO here
+    ```
+  </Accordion>
+  
+  <Accordion title="Everyone can access protected volume">
+    Check for `*` in permissions. Remove to require authentication:
+    ```yaml
+    accs:
+      r: *      # BAD - everyone can access
+      r: alice  # GOOD - only alice can access
+    ```
+  </Accordion>
+  
+  <Accordion title="Dotfiles not appearing">
+    User needs `.` permission AND must enable in settings:
+    ```yaml
+    accs:
+      r.: user  # grant dotfiles permission
+    ```
+    Then user enables `dotfiles` option in the `[⚙️]` settings tab.
+  </Accordion>
+</AccordionGroup>

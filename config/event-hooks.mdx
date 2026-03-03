@@ -1,0 +1,558 @@
+---
+title: Event Hooks
+description: Trigger programs on uploads, renames, deletes, and other events in copyparty
+---
+
+Event hooks allow you to trigger external programs or scripts when specific events occur in copyparty, such as file uploads, moves, renames, or deletions.
+
+<Info>
+See [`--help-hooks`](https://copyparty.eu/cli/#hooks-help-page) for complete documentation and [example hooks](https://github.com/9001/copyparty/tree/hovudstraum/bin/hooks) in the repository.
+</Info>
+
+## Hook Types
+
+Copyparty supports hooks for various events:
+
+### Upload Hooks
+
+<ParamField path="xbu" type="before upload">
+  Execute command **before** a file upload starts
+  
+  ```yaml
+  [global]
+    xbu: /usr/local/bin/check-upload.py
+  
+  [/uploads]
+    /mnt/uploads
+    flags:
+      xbu: /usr/local/bin/volume-specific.sh
+  ```
+</ParamField>
+
+<ParamField path="xau" type="after upload">
+  Execute command **after** a file upload finishes
+  
+  ```yaml
+  [global]
+    xau: /usr/bin/notify-send,"File uploaded",--
+  ```
+  
+  Most commonly used hook type for notifications and post-processing.
+</ParamField>
+
+<ParamField path="xiu" type="idle after upload">
+  Execute command after all uploads finish and volume is idle
+  
+  Unlike `xbu`/`xau` (which execute for every file), `xiu` is given a list of recent uploads on STDIN after the server has been idle for N seconds.
+  
+  ```yaml
+  [global]
+    xiu: 30,/usr/local/bin/batch-process.py  # idle for 30 seconds
+  ```
+</ParamField>
+
+### File Operation Hooks
+
+<ParamField path="xbc" type="before copy">
+  Execute command **before** a file copy
+</ParamField>
+
+<ParamField path="xac" type="after copy">
+  Execute command **after** a file copy
+</ParamField>
+
+<ParamField path="xbr" type="before rename">
+  Execute command **before** a file rename/move
+</ParamField>
+
+<ParamField path="xar" type="after rename">
+  Execute command **after** a file rename/move
+</ParamField>
+
+<ParamField path="xbd" type="before delete">
+  Execute command **before** a file delete
+</ParamField>
+
+<ParamField path="xad" type="after delete">
+  Execute command **after** a file delete
+</ParamField>
+
+### Special Hooks
+
+<ParamField path="xm" type="on message">
+  Execute command when a message is received (via `[📟]` send-msg tab)
+  
+  ```yaml
+  [global]
+    xm: /usr/local/bin/handle-message.py
+  ```
+</ParamField>
+
+<ParamField path="xban" type="on ban">
+  Execute command when someone gets banned
+  
+  ```yaml
+  [global]
+    xban: /usr/local/bin/log-ban.sh
+  ```
+</ParamField>
+
+## Hook Flags
+
+Hooks can have additional flags to modify their behavior:
+
+<ParamField path="c" type="check flag">
+  Hook exit code controls the action:
+  - Exit `0` = allow the action, continue to next hook
+  - Exit `100` = allow the action, stop running remaining hooks
+  - Any other = reject/prevent the action, don't run remaining hooks
+  
+  ```yaml
+  [/restricted]
+    /mnt/restricted
+    flags:
+      xbu: c,/usr/local/bin/check-file.py  # check before upload
+  ```
+</ParamField>
+
+<ParamField path="j" type="json flag">
+  Send extended upload info as JSON instead of just the filesystem path
+  
+  ```yaml
+  [global]
+    xau: j,/usr/local/bin/process-upload.py
+  ```
+  
+  JSON includes: file path, uploader IP, username, size, timestamp, etc.
+</ParamField>
+
+<ParamField path="t[N]" type="timeout flag">
+  Timeout after N seconds (important for blocking hooks like REQ/PUSH)
+  
+  ```yaml
+  [global]
+    xau: t3,zmq:req:tcp://localhost:5555  # 3 second timeout
+  ```
+</ParamField>
+
+<ParamField path="I" type="import flag">
+  Import hook as Python module (140x faster startup, but bugs may crash copyparty)
+  
+  <Warning>
+  Only use with well-tested hooks. A bug in an imported hook can crash the entire server.
+  </Warning>
+  
+  ```yaml
+  [global]
+    xau: I,/usr/local/bin/fast-hook.py
+  ```
+</ParamField>
+
+## Hook Arguments
+
+### Basic Syntax
+
+```yaml
+# Simple command
+xau: /usr/bin/notify-send
+
+# Command with arguments, use commas and trailing --
+xau: /usr/bin/notify-send,"File uploaded",--
+
+# Multiple flags
+xau: c,j,t5,/usr/local/bin/check.py
+```
+
+### Information Passed to Hooks
+
+By default, hooks receive the **filesystem path** as the first (and only) argument.
+
+With the `j` flag, hooks receive a **JSON object** on STDIN with:
+```json
+{
+  "vpath": "/uploads/file.jpg",
+  "rpath": "/mnt/uploads/file.jpg",
+  "user": "alice",
+  "ip": "192.168.1.100",
+  "size": 1048576,
+  "ts": 1709481600
+}
+```
+
+## ZeroMQ Hooks
+
+Instead of running programs, hooks can send ZeroMQ messages:
+
+<CodeGroup>
+```yaml PUB/SUB Pattern
+[global]
+  xau: zmq:pub:tcp://*:5556  # send PUB to all connected SUB clients
+```
+
+```yaml PUSH/PULL Pattern
+[global]
+  xau: t3,zmq:push:tcp://*:5557  # send PUSH to one PULL client
+```
+
+```yaml REQ/REP Pattern
+[global]
+  xau: t3,j,zmq:req:tcp://localhost:5555  # send REQ, wait for REP
+```
+</CodeGroup>
+
+<Note>
+The PUSH and REQ patterns need `t[N]` (timeout) because they block if no clients are connected.
+</Note>
+
+### Example ZeroMQ Receiver
+
+See [zmq-recv.py](https://github.com/9001/copyparty/blob/hovudstraum/bin/zmq-recv.py) for a complete example.
+
+```python
+import zmq
+
+context = zmq.Context()
+socket = context.socket(zmq.SUB)
+socket.connect("tcp://localhost:5556")
+socket.subscribe(b"")  # subscribe to all messages
+
+while True:
+    message = socket.recv_string()
+    print(f"Upload: {message}")
+```
+
+## Common Use Cases
+
+### Desktop Notifications
+
+```yaml
+[global]
+  xau: /usr/bin/notify-send,"Upload complete",--
+```
+
+Or with more details using the [notify2.py](https://github.com/9001/copyparty/blob/hovudstraum/bin/hooks/notify2.py) example:
+
+```yaml
+[global]
+  xau: j,/usr/local/bin/notify2.py
+```
+
+### Discord Webhook Notifications
+
+Using [discord-announce.py](https://github.com/9001/copyparty/blob/hovudstraum/bin/hooks/discord-announce.py):
+
+```yaml
+[global]
+  xau: j,/usr/local/bin/discord-announce.py
+```
+
+### Reject Specific File Types
+
+Using [reject-extension.py](https://github.com/9001/copyparty/blob/hovudstraum/bin/hooks/reject-extension.py):
+
+```yaml
+[/uploads]
+  /mnt/uploads
+  flags:
+    xbu: c,/usr/local/bin/reject-extension.py  # check flag prevents upload
+```
+
+### Remove EXIF from Images
+
+Using [image-noexif.py](https://github.com/9001/copyparty/blob/hovudstraum/bin/hooks/image-noexif.py):
+
+```yaml
+[/photos]
+  /mnt/photos
+  flags:
+    xau: /usr/local/bin/image-noexif.py  # strip EXIF after upload
+```
+
+### Download URLs
+
+Using [wget.py](https://github.com/9001/copyparty/blob/hovudstraum/bin/hooks/wget.py):
+
+```yaml
+[global]
+  xm: /usr/local/bin/wget.py  # POST URLs to download them
+```
+
+Users can then POST URLs via the `[📟]` send-msg tab to download files.
+
+### Batch Processing
+
+Using [xiu-sha.py](https://github.com/9001/copyparty/blob/hovudstraum/bin/hooks/xiu-sha.py):
+
+```yaml
+[global]
+  xiu: 60,/usr/local/bin/xiu-sha.py  # create checksum after 60s idle
+```
+
+### Custom Error Messages
+
+Using [reject-and-explain.py](https://github.com/9001/copyparty/blob/hovudstraum/bin/hooks/reject-and-explain.py):
+
+```yaml
+[/uploads]
+  /mnt/uploads
+  flags:
+    xbu: c,/usr/local/bin/reject-and-explain.py
+```
+
+## Hook Effects
+
+Some hooks can return special instructions to copyparty:
+
+### Relocation
+
+Redirect an upload to another destination. Example from [reloc-by-ext.py](https://github.com/9001/copyparty/blob/hovudstraum/bin/hooks/reloc-by-ext.py):
+
+```python
+import sys, os
+path = sys.argv[1]
+if path.endswith('.mp3'):
+    # Relocate MP3s to /music folder
+    print("reloc /music/" + os.path.basename(path))
+    sys.exit(100)  # exit 100 = success, stop other hooks
+```
+
+### Indexing
+
+Tell copyparty about additional files to scan. Example from [podcast-normalizer.py](https://github.com/9001/copyparty/blob/hovudstraum/bin/hooks/podcast-normalizer.py):
+
+```python
+import sys, subprocess
+infile = sys.argv[1]
+outfile = infile.replace('.mp3', '-normalized.mp3')
+
+# Create normalized version
+subprocess.run(['ffmpeg', '-i', infile, '-af', 'loudnorm', outfile])
+
+# Tell copyparty to index the new file
+print(f"idx {outfile}")
+```
+
+## Configuration Examples
+
+### Per-Volume Hooks
+
+```yaml
+[/uploads]
+  /mnt/uploads
+  accs:
+    w: *
+  flags:
+    xbu: c,/usr/local/bin/check-upload.sh   # before upload
+    xau: /usr/local/bin/notify-upload.sh    # after upload
+```
+
+### Multiple Hooks
+
+Hooks are additive - you can specify multiple hooks of the same type:
+
+```yaml
+[global]
+  xau: /usr/bin/notify-send,Upload,--
+  xau: j,/usr/local/bin/log-upload.py
+  xau: zmq:pub:tcp://*:5556
+```
+
+All three hooks will execute after each upload.
+
+### Global + Volume Hooks
+
+```yaml
+[global]
+  xau: /usr/local/bin/global-hook.py  # runs for all volumes
+
+[/special]
+  /mnt/special
+  flags:
+    xau: /usr/local/bin/special-hook.py  # also runs for this volume
+```
+
+### Conditional Hooks by File Type
+
+Create a wrapper script:
+
+```bash check-and-process.sh
+#!/bin/bash
+FILE="$1"
+
+if [[ "$FILE" == *.mp3 ]]; then
+    /usr/local/bin/process-audio.sh "$FILE"
+elif [[ "$FILE" == *.jpg ]]; then
+    /usr/local/bin/process-image.sh "$FILE"
+fi
+```
+
+```yaml
+[global]
+  xau: /usr/local/bin/check-and-process.sh
+```
+
+## Writing Custom Hooks
+
+### Basic Template (Shell)
+
+```bash hook-template.sh
+#!/bin/bash
+FILE_PATH="$1"
+
+# Your logic here
+echo "Processing: $FILE_PATH"
+
+# Exit 0 for success (in 'c' check hooks)
+exit 0
+```
+
+### Basic Template (Python)
+
+```python hook-template.py
+#!/usr/bin/env python3
+import sys
+
+file_path = sys.argv[1]
+
+# Your logic here
+print(f"Processing: {file_path}")
+
+# Exit 0 for success
+sys.exit(0)
+```
+
+### JSON Input Template (Python)
+
+```python json-hook-template.py
+#!/usr/bin/env python3
+import sys
+import json
+
+# Read JSON from stdin (requires 'j' flag)
+data = json.load(sys.stdin)
+
+vpath = data['vpath']    # virtual path (URL path)
+rpath = data['rpath']    # real path (filesystem)
+user = data['user']      # username
+ip = data['ip']          # client IP
+size = data['size']      # file size
+ts = data['ts']          # timestamp
+
+print(f"User {user} from {ip} uploaded {vpath}")
+
+sys.exit(0)
+```
+
+### Check Hook Template
+
+```python check-hook.py
+#!/usr/bin/env python3
+import sys
+import os
+
+file_path = sys.argv[1]
+filename = os.path.basename(file_path)
+
+# Reject files with 'bad' in the name
+if 'bad' in filename.lower():
+    print("ERROR: Filename contains 'bad'", file=sys.stderr)
+    sys.exit(1)  # non-zero = reject
+
+# Allow file
+sys.exit(0)
+```
+
+## Performance Considerations
+
+<Warning>
+**Hook performance impact:**
+
+- `xbu` and `xau` hooks run for **every single file**
+- Slow hooks will delay uploads
+- Use `xiu` for batch processing when possible
+- Use the `I` flag only for well-tested hooks
+- Fork expensive operations or use `kn` flag in mtp plugins
+</Warning>
+
+<Steps>
+  <Step title="Test hooks thoroughly">
+    Ensure hooks exit correctly and handle errors gracefully
+  </Step>
+  
+  <Step title="Use xiu for batches">
+    Process multiple uploads at once instead of one-by-one
+  </Step>
+  
+  <Step title="Keep hooks fast">
+    Offload heavy processing to background jobs
+  </Step>
+  
+  <Step title="Monitor hook execution">
+    Check server logs for hook failures or timeouts
+  </Step>
+</Steps>
+
+## Comparison: Hooks vs MTP Plugins
+
+Copyparty has two systems for running external programs:
+
+| Feature | Event Hooks (`xau`, etc.) | MTP Plugins (`mtp`) |
+|---------|--------------------------|---------------------|
+| **Simplicity** | Simple, minimal setup | More complex |
+| **Information** | File path (or basic JSON) | Full metadata (tags, codecs, etc.) |
+| **Blocking** | Blocks upload | Non-blocking, multithreaded |
+| **Trigger** | Every upload/action | Only new unique files |
+| **Pipeline** | Single program | Can chain multiple programs |
+| **Use case** | Notifications, simple checks | Metadata extraction, processing |
+
+<Info>
+For complex metadata processing, consider [mtp plugins](https://github.com/9001/copyparty/tree/hovudstraum/bin/mtag) instead of hooks.
+</Info>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Hook not executing">
+    - Check file permissions: `chmod +x /path/to/hook.sh`
+    - Verify path is absolute, not relative
+    - Check server logs for error messages
+    - Test hook manually: `/path/to/hook.sh /test/file.txt`
+  </Accordion>
+  
+  <Accordion title="Hook runs but action still fails">
+    For `c` (check) hooks:
+    - Exit 0 to allow action
+    - Exit non-zero to reject action
+    - Check stderr for error messages
+  </Accordion>
+  
+  <Accordion title="ZeroMQ timeout">
+    - Add `t[N]` timeout flag for PUSH/REQ patterns
+    - Ensure receiver is running and connected
+    - Check ZeroMQ port is accessible
+  </Accordion>
+  
+  <Accordion title="Hook crashes copyparty">
+    - Remove `I` (import) flag
+    - Fix Python syntax errors in hook
+    - Add error handling to hook script
+  </Accordion>
+  
+  <Accordion title="JSON data not received">
+    - Add `j` flag to hook configuration
+    - Read from stdin, not command-line arguments
+    - Verify JSON parsing in hook script
+  </Accordion>
+</AccordionGroup>
+
+## Example Repository
+
+See the [official hooks directory](https://github.com/9001/copyparty/tree/hovudstraum/bin/hooks) for complete working examples:
+
+- notification hooks
+- validation/rejection hooks  
+- message handlers
+- batch processing
+- webhook integrations
+
+These can be used directly or as templates for your own hooks.

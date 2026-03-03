@@ -1,0 +1,382 @@
+---
+title: Server Setup
+description: Configure server ports, interfaces, SSL, and general options for copyparty
+---
+
+Server configuration for copyparty including network settings, SSL/TLS, and daemon options.
+
+## Configuration Files
+
+Copyparty supports configuration files in addition to command-line arguments. Config files are recommended for complex setups.
+
+### Using Config Files
+
+<CodeGroup>
+```bash Command Line
+# Specify config file with -c
+python copyparty-sfx.py -c foobar.conf
+
+# Or use environment variable
+PRTY_CONFIG=foobar.conf python copyparty-sfx.py
+```
+
+```yaml Config File (example.conf)
+# Not actually YAML but lets pretend
+# Comments require 2 spaces before the #
+
+[global]
+  p: 8086, 3939  # listen on ports 8086 and 3939
+  e2dsa  # enable file indexing and filesystem scanning
+  e2ts   # enable multimedia indexing
+  z, qr  # zeroconf and qrcode (comma-separated)
+```
+</CodeGroup>
+
+<Note>
+The config file syntax is not actually YAML but looks similar. Inline comments are OK if there are 2 spaces before the `#` sign.
+</Note>
+
+## Network Configuration
+
+### Ports and Interfaces
+
+<ParamField path="-p, --port" type="number" default="3923">
+  Port(s) to listen on. Can specify multiple ports.
+  ```bash
+  -p 3923         # single port
+  -p 8080,3939    # multiple ports
+  ```
+</ParamField>
+
+<ParamField path="-i, --ip" type="string" default="0.0.0.0">
+  Network interface to bind to.
+  ```bash
+  -i 0.0.0.0      # all interfaces (default)
+  -i 127.0.0.1    # localhost only
+  -i 192.168.1.5  # specific interface
+  ```
+</ParamField>
+
+<ParamField path="--https" type="string">
+  Enable HTTPS with certificate.
+  ```bash
+  --https 3923,/path/to/cert.pem,/path/to/key.pem
+  ```
+</ParamField>
+
+### Unix Socket
+
+Recommended for reverse-proxy setups (better performance and security).
+
+```yaml
+[global]
+  i: /dev/shm/party.sock  # listen on unix socket
+```
+
+```bash
+# Set permissions on the socket
+chmod 0770 /dev/shm/party.sock
+```
+
+## File Indexing
+
+Enable database features for searching, upload tracking, and metadata.
+
+<ParamField path="-e2d" type="boolean">
+  Enable database; makes files searchable and enables upload-undo
+</ParamField>
+
+<ParamField path="-e2ds" type="boolean">
+  Scan writable folders for new files on startup (also sets `-e2d`)
+</ParamField>
+
+<ParamField path="-e2dsa" type="boolean">
+  Scan all folders for new files on startup (also sets `-e2d`)
+</ParamField>
+
+<ParamField path="-e2t" type="boolean">
+  Enable multimedia indexing; makes it possible to search for tags
+</ParamField>
+
+<ParamField path="-e2ts" type="boolean">
+  Scan existing files for tags on startup (also sets `-e2t`)
+</ParamField>
+
+<ParamField path="-e2tsr" type="boolean">
+  Delete all metadata from DB for full rescan (also sets `-e2ts`)
+</ParamField>
+
+### Recommended Setup
+
+```yaml
+[global]
+  e2dsa  # enable general file indexing
+  e2ts   # enable audio metadata indexing (needs FFprobe or Mutagen)
+```
+
+## Database Location
+
+By default, a `.hist` folder is created inside each volume for the filesystem index, thumbnails, audio transcodes, and markdown history.
+
+<ParamField path="--hist" type="string">
+  Move database and thumbnails to another location (global or per-volume)
+  ```yaml
+  [global]
+    hist: /tmp/cdb  # global setting
+  
+  [/music]
+    /mnt/music
+    flags:
+      hist: /tmp/music-cache  # per-volume setting
+  ```
+</ParamField>
+
+<ParamField path="--dbpath" type="string">
+  Move only the database (keep thumbnails in volume)
+  ```yaml
+  [/music]
+    /mnt/music
+    flags:
+      dbpath: /tmp/music-db
+  ```
+</ParamField>
+
+<Warning>
+If the `up2k.db` is on a network share (samba/NFS), you may get unpredictable behavior if the share disconnects. Use `--hist` or `--dbpath` to place it on local storage.
+</Warning>
+
+## Zeroconf / mDNS / SSDP
+
+Announce services on the local network for easy discovery.
+
+<ParamField path="-z, --zeroconf" type="boolean">
+  Enable zeroconf (mDNS + SSDP)
+</ParamField>
+
+<ParamField path="--mdns" type="boolean">
+  Enable mDNS only (Bonjour/Avahi)
+</ParamField>
+
+<ParamField path="--ssdp" type="boolean">
+  Enable SSDP only (Windows Explorer)
+</ParamField>
+
+```yaml
+[global]
+  z     # enable both mDNS and SSDP
+  qr    # show QR code on startup
+```
+
+## QR Code
+
+Print a QR code for quick access from mobile devices.
+
+```yaml
+[global]
+  qr  # print QR code on startup
+```
+
+## Protocol Servers
+
+### FTP Server
+
+<ParamField path="--ftp" type="number">
+  Enable FTP server on specified port
+  ```bash
+  --ftp 3921
+  ```
+</ParamField>
+
+<ParamField path="--ftps" type="number">
+  Enable FTPS (FTP over SSL) on specified port
+  ```bash
+  --ftps 3990
+  ```
+</ParamField>
+
+### SFTP Server
+
+<ParamField path="--sftp" type="number">
+  Enable SFTP server (goes ~700 MiB/s, slower than WebDAV and FTP)
+  ```bash
+  --sftp 3922
+  ```
+</ParamField>
+
+### WebDAV Server
+
+<ParamField path="--no-dav" type="boolean">
+  Disable WebDAV support (enabled by default)
+</ParamField>
+
+<ParamField path="--dav-auth" type="boolean">
+  Ask WebDAV clients to login for all folders (required for some clients)
+</ParamField>
+
+### TFTP Server
+
+<ParamField path="--tftp" type="number">
+  Enable TFTP server (read/write) on specified port
+  ```bash
+  --tftp 3969
+  ```
+</ParamField>
+
+### SMB Server
+
+<ParamField path="--smb" type="number">
+  Enable SMB/CIFS server (unsafe, slow, not recommended for WAN)
+  ```bash
+  --smb 3945
+  ```
+</ParamField>
+
+<Warning>
+SMB server is unsafe and slow. Not recommended for internet-facing deployments.
+</Warning>
+
+## Performance Options
+
+<ParamField path="-j" type="number" default="0">
+  Enable multiprocessing (actual multithreading)
+  ```bash
+  -j0  # disabled (default)
+  -j2  # 2 worker processes
+  -j4  # 4 worker processes
+  ```
+  <Warning>
+  Usually NOT recommended. Can reduce performance in most cases despite lower latency.
+  </Warning>
+</ParamField>
+
+<ParamField path="-q" type="boolean">
+  Disable logging (improves performance)
+</ParamField>
+
+<ParamField path="--no-hash" type="regex">
+  Skip hashing files matching pattern
+  ```yaml
+  [global]
+    no-hash: \.iso$  # skip hashing *.iso files
+  ```
+</ParamField>
+
+<ParamField path="--no-dirsz" type="boolean">
+  Show folder inode size instead of total contents size (~30% faster listings)
+</ParamField>
+
+## Firewall Ports
+
+Example firewall configuration for all copyparty features:
+
+```bash
+firewall-cmd --permanent --add-port={80,443,3921,3922,3923,3945,3990}/tcp
+firewall-cmd --permanent --add-port=12000-12099/tcp  # passive FTP
+firewall-cmd --permanent --add-port={69,1900,3969,5353}/udp
+firewall-cmd --reload
+```
+
+**Port mapping:**
+- 69: TFTP
+- 80/443: HTTP/HTTPS
+- 1900: SSDP
+- 3921: FTP
+- 3922: SFTP
+- 3923: HTTP/HTTPS (default)
+- 3945: SMB
+- 3969: TFTP
+- 3990: FTPS
+- 5353: mDNS
+- 12000-12099: Passive FTP
+
+## Systemd Service
+
+Run copyparty as a systemd service:
+
+```ini systemd/copyparty.service
+[Unit]
+Description=copyparty file server
+After=network.target
+
+[Service]
+Type=simple
+User=copyparty
+Group=copyparty
+ExecStart=/usr/bin/copyparty -c /etc/copyparty/config.conf
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# Enable and start service
+sudo systemctl enable copyparty
+sudo systemctl start copyparty
+
+# Reload config without restart
+sudo systemctl reload copyparty
+```
+
+## Reverse Proxy
+
+See [reverse-proxy documentation](/deployment/reverse-proxy) for nginx/Apache configurations.
+
+<Info>
+When running behind a reverse-proxy, listen on a unix socket for better performance and security.
+</Info>
+
+## Security Hardening
+
+<Steps>
+  <Step title="Set reverse proxy mode">
+    Set `--rproxy 0` if copyparty is directly facing the internet (not through a reverse-proxy)
+  </Step>
+  
+  <Step title="Use unix socket">
+    When behind a reverse-proxy, listen on a unix socket for tighter access control
+  </Step>
+  
+  <Step title="Prevent XSS">
+    Use volflag `nohtml` for volumes with anonymous uploads or untrusted content
+  </Step>
+  
+  <Step title="Disable dangerous features">
+    Use `-s` safety profile to disable thumbnails and audio transcoding
+  </Step>
+</Steps>
+
+## Complete Example
+
+```yaml
+[global]
+  # Network
+  i: /dev/shm/party.sock
+  
+  # Indexing
+  e2dsa  # enable file indexing
+  e2ts   # enable multimedia indexing
+  
+  # Features
+  z      # zeroconf
+  qr     # show QR code
+  
+  # Performance
+  q      # quiet mode
+  hist: /var/cache/copyparty
+  
+  # Protocols
+  ftp: 3921
+  sftp: 3922
+
+[accounts]
+  admin: secure_password_here
+  guest: guest123
+
+[/]
+  /srv/files
+  accs:
+    r: *
+    rw: admin
+```

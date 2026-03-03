@@ -1,0 +1,135 @@
+---
+title: API Overview
+description: Overview of copyparty's HTTP API for uploads, downloads, and search
+---
+
+copyparty provides a comprehensive HTTP API for programmatic access to all server features including file uploads, downloads, search, and administration.
+
+## Base URL
+
+All API endpoints are relative to your copyparty server's base URL:
+
+```
+http://your-server:3923/
+```
+
+For HTTPS:
+
+```
+https://your-server:3923/
+```
+
+## API Categories
+
+copyparty's HTTP API is organized into several functional areas:
+
+<CardGroup cols={2}>
+  <Card title="Upload API" icon="upload" href="/api/upload">
+    Upload files using PUT, multipart POST, or the resumable up2k protocol
+  </Card>
+  
+  <Card title="Download API" icon="download" href="/api/download">
+    Download files, folders as zip/tar archives, and stream content
+  </Card>
+  
+  <Card title="Search API" icon="magnifying-glass" href="/api/search">
+    Search files by name, tags, metadata, and content hashes
+  </Card>
+  
+  <Card title="Authentication" icon="key" href="/api/authentication">
+    Authenticate requests using headers, cookies, or URL parameters
+  </Card>
+</CardGroup>
+
+## HTTP Methods
+
+copyparty supports standard HTTP methods:
+
+- **GET** - Retrieve files, listings, and metadata
+- **HEAD** - Get file metadata without downloading
+- **POST** - Upload files (multipart), search, administrative actions
+- **PUT** - Upload files directly
+- **DELETE** - Delete files and folders (requires permissions)
+
+## Response Formats
+
+The API supports multiple response formats:
+
+- **JSON** - Structured data for search results, file listings
+- **HTML** - Browser-friendly views
+- **Plaintext** - Simple listings for scripts
+- **Binary** - File downloads, thumbnails
+
+## Common URL Parameters
+
+Many endpoints support these URL parameters:
+
+<ParamField query="ls" type="string" default="json">
+  List files/folders. Values: blank (JSON), `t` (plaintext), `v` (terminal-formatted)
+</ParamField>
+
+<ParamField query="pw" type="string">
+  Authentication password. Format: `password` or `username:password` if `--usernames` is enabled
+</ParamField>
+
+<ParamField query="dots" type="boolean">
+  Include dotfiles in listings (requires permission)
+</ParamField>
+
+<ParamField query="j" type="boolean">
+  Return JSON response instead of plaintext
+</ParamField>
+
+## CORS Support
+
+All non-GET/HEAD requests require CORS validation. Configure CORS settings with:
+
+- `--no-cors` - Disable CORS checks
+- `--no-cors-s` - Disable CORS for same-host requests
+
+## Rate Limiting
+
+Some endpoints implement rate limiting:
+
+- **Search**: 0.7 second penalty between searches that take > 0.7s
+- **Uploads**: Configurable with `--ban-pw` (default: 24h ban for 9 failed auth attempts)
+
+## Error Codes
+
+| Code | Meaning |
+|------|----------|
+| 400  | Bad Request - Invalid parameters or malformed request |
+| 401  | Unauthorized - Authentication required |
+| 403  | Forbidden - Insufficient permissions |
+| 404  | Not Found - File or path does not exist |
+| 405  | Method Not Allowed - HTTP method not supported |
+| 429  | Too Many Requests - Rate limit exceeded |
+| 500  | Internal Server Error |
+
+## Security Notes
+
+<Warning>
+  - Password authentication via URL parameter `?pw=` can be disabled with `--pw-urlp=A`
+  - Header authentication via `PW:` can be disabled with `--pw-hdr=A`
+  - Basic auth can be disabled with `--no-bauth`
+  - Failed authentication attempts trigger bans (configurable with `--ban-pw`)
+</Warning>
+
+## Client Libraries
+
+Official clients:
+
+- **Python**: [u2c.py](https://github.com/9001/copyparty/blob/hovudstraum/bin/u2c.py) - Command-line uploader
+- **FUSE**: [partyfuse.py](https://github.com/9001/copyparty/blob/hovudstraum/bin/partyfuse.py) - Mount as filesystem
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Upload Files" icon="upload" href="/api/upload">
+    Learn about upload endpoints and the up2k protocol
+  </Card>
+  
+  <Card title="Download Files" icon="download" href="/api/download">
+    Download files and create archives
+  </Card>
+</CardGroup>

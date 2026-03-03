@@ -1,0 +1,268 @@
+---
+title: 'Upload System'
+description: 'Resumable uploads with up2k, basic uploader, and advanced upload features'
+---
+
+## Overview
+
+copyparty provides multiple upload methods to suit different browsers and use cases, from legacy IE6 support to modern resumable uploads with no filesize limit.
+
+## up2k: Resumable Uploads
+
+The primary upload method is **up2k**, a JavaScript-based resumable uploader with several advantages:
+
+<CardGroup cols={2}>
+  <Card title="Resumable" icon="rotate">
+    Uploads automatically resume if interrupted by network issues or browser restarts
+  </Card>
+  <Card title="No Size Limit" icon="infinity">
+    Upload files of any size, even through Cloudflare and other proxies
+  </Card>
+  <Card title="Multithreaded" icon="bolt">
+    Upload multiple chunks in parallel for maximum speed
+  </Card>
+  <Card title="Verified" icon="shield-check">
+    Each chunk is checksummed - server detects corruption and requests retransmission
+  </Card>
+</CardGroup>
+
+### How up2k Works
+
+1. Files are split into chunks (dynamically sized based on file size)
+2. Each chunk is hashed on the client side
+3. Hashes are sent to the server to check what already exists
+4. Only missing chunks are uploaded
+5. Server reassembles the file from chunks
+
+<Note>
+up2k has to read each file twice (once for hashing, once for uploading), but the resumability and deduplication make it worthwhile for most use cases.
+</Note>
+
+### Uploading Files
+
+There are several ways to initiate an up2k upload:
+
+<Tabs>
+  <Tab title="Drag & Drop">
+    Drag files or folders from your file explorer directly into the browser window. The **up2k** uploader will automatically handle them.
+    
+    <Note>
+    Folder uploads work in modern browsers - files are added recursively.
+    </Note>
+  </Tab>
+  
+  <Tab title="Ctrl+V">
+    Select files in your file explorer and press `Ctrl+V` inside the browser window.
+    
+    <Warning>
+    This method only works for files, not folders.
+    </Warning>
+  </Tab>
+  
+  <Tab title="Command Line">
+    Use the [u2c.py](https://github.com/9001/copyparty/tree/hovudstraum/bin#u2cpy) command-line uploader for scripting and automation.
+  </Tab>
+</Tabs>
+
+### Upload UI Features
+
+The up2k interface provides several configuration options:
+
+- **Parallel uploads**: Number of chunks to upload simultaneously (increase on Android for better speed)
+- **🏃 Continue analysis**: Keep processing other files while one is uploading  
+- **🥔 Potato mode**: Simplified UI for faster uploads from slow devices
+- **🛡️ Overwrite mode**:
+  - `🛡️` Never overwrite (generate new filename)
+  - `🕒` Overwrite if server file is older
+  - `♻️` Always overwrite if files are different
+- **🎲 Random filenames**: Generate random filenames during upload
+- **🔎 File search**: Switch between upload and search mode
+
+### Upload Tabs
+
+- `[ok]` - Successfully completed files
+- `[ng]` - Failed/rejected uploads (already exists, etc.)
+- `[done]` - Combined chronological list of ok and ng
+- `[busy]` - Currently hashing, pending, or uploading
+- `[que]` - Queued files waiting to process
+
+## Basic Uploader (bup)
+
+The **basic uploader** uses plain multipart uploads and supports browsers as old as Netscape 4.0 and IE6.
+
+<Note>
+The basic uploader can theoretically be up to 2x faster than up2k for files larger than RAM on slow connections, since it doesn't need to hash files.
+</Note>
+
+Access the basic uploader by clicking the `[🎈] bup` tab.
+
+## Advanced Upload Features
+
+### Deduplication
+
+With `-e2dsa` enabled, copyparty detects when uploaded content already exists:
+
+- Client doesn't upload anything that already exists on the server
+- Server creates a symlink or hardlink to the existing file (with `--dedup`)
+- No wasted bandwidth or disk space
+
+<Tabs>
+  <Tab title="Symlinks (Default)">
+    ```bash
+    copyparty -e2dsa --dedup
+    ```
+    
+    Each symlink can have its own timestamp, but requires copyparty to manage moves/renames.
+  </Tab>
+  
+  <Tab title="Hardlinks">
+    ```bash
+    copyparty -e2dsa --dedup --hardlink-only
+    ```
+    
+    Hardlinks behave like regular files but share the same inode. Safe to rename with other tools.
+  </Tab>
+  
+  <Tab title="Reflinks (CoW)">
+    ```bash
+    copyparty -e2dsa --dedup --reflink
+    ```
+    
+    Copy-on-write on supported filesystems (btrfs, xfs). Safest option but requires Linux 5.3+ and Python 3.14+.
+  </Tab>
+</Tabs>
+
+<Warning>
+If you edit a deduplicated file, you will modify ALL copies of that file. This is especially surprising with hardlinks.
+</Warning>
+
+### Unpost: Undo Uploads
+
+Delete accidental uploads using the `[🧯]` unpost tab.
+
+```yaml
+[global]
+  e2d            # enable up2k database
+  unpost: 43200  # allow undo for 12 hours (default)
+```
+
+Users can delete their own uploads even without delete permission, but only within the configured timespan.
+
+### Self-Destruct Uploads
+
+Files can automatically expire after a specified time.
+
+```yaml
+[/tmp]
+  /srv/temporary
+  accs:
+    w: *
+  flags:
+    lifetime: 3600  # delete uploads after 1 hour
+```
+
+Clients can request a shorter lifetime through the up2k UI.
+
+### Race the Beam
+
+Download files while they're still uploading! This feature enables near-peer-to-peer transfers.
+
+<Note>
+Requires up2k uploads and `-e2d` indexing enabled.
+</Note>
+
+### File Search
+
+Drop files into the `Search` dropzone to check if they already exist on the server.
+
+1. Files are hashed client-side
+2. Hash is sent to server
+3. Server checks database for matching content
+4. Results show existing file locations
+
+On mobile, toggle the `[🔎]` switch before selecting files.
+
+## Upload Configuration
+
+### Server-Side Limits
+
+```yaml
+[/uploads]
+  /mnt/uploads
+  accs:
+    w: *
+  flags:
+    sz: 1k-100m        # accept only 1 KiB to 100 MiB files
+    df: 10g            # block if less than 10 GiB free
+    vmaxb: 500g        # volume max 500 GiB total
+    vmaxn: 100000      # volume max 100k files
+    maxn: 50,3600      # 50 files per hour per IP
+    maxb: 5g,3600      # 5 GiB per hour per IP
+```
+
+### Upload Organization
+
+```yaml
+[/organized]
+  /srv/files
+  flags:
+    nosub               # force uploads to top level
+    rotn: 1000,2        # organize into subdirs (1000 files each, 2 levels deep)
+    rotf: %Y/%m/%d/%H   # organize by date/time structure
+```
+
+### Compressed Uploads
+
+```yaml
+[/compressed]
+  /srv/backup
+  flags:
+    pk: xz,6   # force xz compression level 6 on all uploads
+```
+
+Or allow optional compression:
+
+```yaml
+flags:
+  gz   # allow gzip compression via ?gz URL parameter
+  xz   # allow xz compression via ?xz URL parameter  
+```
+
+### Chunk Size Configuration
+
+The default chunk size is calculated dynamically:
+
+- Starts at 1 MiB for small files
+- Increases for larger files to keep chunk count reasonable
+- Maximum ~256-4096 chunks per file
+
+Server-side override:
+
+```bash
+copyparty --u2sz 64   # set max chunk size to 64 MiB (default: 96 for Cloudflare)
+```
+
+## Performance Tips
+
+<Tip>
+- **Android Chrome**: Increase "parallel uploads" to overcome Android-specific performance issues
+- **Large files**: Consider basic uploader if files exceed your RAM and you have a fast connection
+- **Slow devices**: Enable 🥔 potato mode for simpler UI
+- **Resume massive uploads**: Enable `turbo` mode to skip hashing already-completed files (read the tooltip first!)
+</Tip>
+
+## Example Commands
+
+```bash
+# Anyone can upload, nobody can see files (write-only)
+copyparty -e2dsa -v .::w
+
+# Anyone can upload and receive secret links
+copyparty -e2dsa -v .::wG:c,fk=8
+
+# Authenticated uploads only
+copyparty -e2dsa -a kevin:okgo -v .::r:A,kevin
+
+# Upload folder with deduplication and unpost
+copyparty -e2dsa --dedup --unpost 86400 -v /uploads::w
+```

@@ -1,0 +1,387 @@
+---
+title: 'Search & Discovery'
+description: 'File search, metadata search, content search, and ID3 tag queries'
+---
+
+## Overview
+
+copyparty provides powerful search capabilities: find files by name/path, size, date, content hash, or metadata tags like artist and title.
+
+## File Search by Content
+
+Find duplicate files by dropping them into the browser.
+
+### How It Works
+
+1. Drag files into the **Search** dropzone (or toggle `[🔎]` on mobile)
+2. Files are hashed client-side  
+3. Hash sent to server
+4. Server checks database for matching content
+5. Results show where identical files exist
+
+<Note>
+Requires `-e2dsa` to index file hashes. Files that match go into `[ok]`, unknown files into `[ng]`.
+</Note>
+
+### Wark Search
+
+Search by file identifier (wark/checksum) directly:
+
+```
+raw: w = kFpDiztbZc8Z1Lzi
+```
+
+Enter this in the `[🔎] Search` tab → `raw` field.
+
+## Metadata Search
+
+Search by file attributes and media tags.
+
+### Enable Indexing
+
+```bash
+# Enable file indexing and tag scanning
+copyparty -e2dsa -e2ts
+```
+
+```yaml
+[global]
+  e2dsa  # index all files (size, date, hash)
+  e2ts   # index audio/video tags
+```
+
+### Search Interface
+
+Click `[🔎]` in the top navigation to open the search tab.
+
+### Search Fields
+
+<Tabs>
+  <Tab title="Basic">
+    **Path**
+    - Space-separated AND search
+    - `-` prefix to negate (exclude)
+    - Example: `music shibayan -bossa`
+      - ✅ Matches: `/music/shibayan/album/song.mp3`
+      - ❌ Rejects: `/music/shibayan/bossa-nova/track.flac`
+    
+    **Name**
+    - Search filename only (not full path)
+    - Example: `demetori styx`
+    
+    **Size**
+    - Range: `10m-100m` (10-100 MiB)
+    - Min: `>5g` or `5g-`
+    - Max: `<1k` or `-1k`
+    - Suffixes: `b`, `k`, `m`, `g`
+    
+    **Date**
+    - Range: `2023-01-01-2023-12-31`
+    - After: `>2023-06-01` or `2023-06-01-`  
+    - Before: `<2023-01-01` or `-2023-01-01`
+  </Tab>
+  
+  <Tab title="Tags">
+    Search indexed metadata (requires `-e2ts`):
+    
+    **Tag Fields**
+    - `artist:`, `title:`, `album:`
+    - `genre:`, `date:`, `key:`
+    - `.bpm:`, `.dur:`, `.tn:` (numeric)
+    
+    **Examples**
+    ```
+    artist: nhato
+    title: *dream*
+    .bpm: 128-140
+    genre: *trance*
+    ```
+    
+    **Wildcards**
+    - `*` matches any characters
+    - `artist:*nhato*` finds "nhato", "Nhato", "NHATO"
+  </Tab>
+  
+  <Tab title="Raw SQL">
+    Advanced queries using SQLite syntax:
+    
+    **Complex Queries**
+    ```sql
+    (tags like *nhato* or tags like *taishi*) 
+    and (not tags like *nhato* or not tags like *taishi*)
+    ```
+    Finds songs by nhato OR taishi, excluding collabs.
+    
+    ```sql
+    substr(w,1,4) = 'abcd'
+    ```
+    Search by partial hash.
+    
+    **Available Columns**
+    - `w` - file hash (wark)
+    - `sz` - file size
+    - `mt` - modified time (unix timestamp)
+    - `at` - access time
+    - `tags` - concatenated metadata
+  </Tab>
+</Tabs>
+
+## Tag Search Examples
+
+### Find Specific Artist
+
+```
+artist: demetori
+```
+
+### Find Songs in BPM Range
+
+```
+.bpm: 170-180
+```
+
+### Find Long Songs
+
+```
+.dur: 600-
+```
+(Duration 600+ seconds = 10+ minutes)
+
+### Complex Tag Query
+
+```
+artist: *sound* -artist: *souledge*
+genre: trance
+.bpm: 138-142
+```
+
+Finds:
+- Artist contains "sound" but not "souledge"
+- Genre is trance  
+- BPM between 138-142
+
+### Raw SQL: Exclude Collabs
+
+```sql
+tags like *artist1* and tags like *artist2*
+and (not tags like *artist1* or not tags like *artist2*)
+```
+
+## Search Configuration
+
+### Control What's Searchable
+
+```yaml
+[global]
+  # Exclude patterns from search results
+  srch-excl: password|logs/[0-9]|backup
+```
+
+### Dotfiles in Search
+
+Hidden files (`.filename`) require special permission:
+
+```yaml
+[/music]
+  /mnt/music
+  accs:
+    r.: alice  # alice can see dotfiles
+  flags:
+    dotsrch    # dotfiles appear in search results
+```
+
+Without `dotsrch`, dotfiles are excluded from search even if user has `.` permission.
+
+### Per-Volume Search
+
+Search behavior can differ per volume:
+
+```yaml
+[/public]
+  /srv/public
+  flags:
+    e2dsa      # index everything
+    
+[/private]
+  /srv/private  
+  flags:
+    d2d        # disable all indexing
+    
+[/media]
+  /srv/media
+  flags:
+    e2d        # index files
+    d2t        # but not tags
+```
+
+## Search Performance
+
+### Indexing Options
+
+<Tabs>
+  <Tab title="Full Index">
+    ```bash
+    copyparty -e2dsa -e2ts
+    ```
+    
+    - **e2dsa**: Index all files (writable + readonly)
+    - **e2ts**: Scan tags in all files without tags
+    - Best search performance
+    - Slow initial startup
+  </Tab>
+  
+  <Tab title="On Upload Only">
+    ```bash
+    copyparty -e2d -e2t
+    ```
+    
+    - Only index new uploads
+    - Fast startup
+    - Won't find existing files until uploaded again
+  </Tab>
+  
+  <Tab title="Partial Index">
+    ```bash
+    copyparty -e2dsa --no-hash '\.iso$'
+    ```
+    
+    - Index metadata but skip hashing `.iso` files
+    - Faster scanning
+    - Cannot deduplicate or content-search skipped files
+  </Tab>
+</Tabs>
+
+### Exclude from Indexing
+
+```yaml
+[/downloads]
+  /mnt/downloads
+  flags:
+    noidx: '\.tmp$|\.part$'  # skip temporary files
+    nohash: '\.iso$'          # hash-less indexing for ISOs
+```
+
+## Database Location
+
+Searches query the `up2k.db` SQLite database.
+
+```yaml
+[global]
+  hist: /fast/ssd/copyparty  # put db on SSD for speed
+  
+[/music]
+  /slow/nas/music
+  flags:
+    hist: -                   # or per-volume: use volume's .hist/
+    dbpath: /fast/ssd/music   # db only (thumbnails stay in volume)
+```
+
+<Tip>
+Placing the database on an SSD dramatically improves search performance, especially for large libraries.
+</Tip>
+
+## API Access
+
+### Search via HTTP API
+
+```bash
+# Search by name
+curl 'http://localhost:3923/?q=demetori'
+
+# Search with filters
+curl 'http://localhost:3923/?q=styx&artist=demetori'
+
+# JSON output
+curl 'http://localhost:3923/?j&q=demetori'
+```
+
+### Raw SQL via API
+
+```bash
+curl --data-urlencode "q=w like 'abc%'" \
+  'http://localhost:3923/?raw'
+```
+
+## Search Results
+
+Results display:
+- File path (click to navigate)
+- File size
+- Last modified date
+- Metadata tags (if indexed)
+- Upload time (if `-e2d` and `-mte +.up_at`)
+
+### Show Upload Time
+
+```yaml
+[global]
+  e2d
+  mte: +.up_at  # append to existing tags
+```
+
+Or per-volume:
+```yaml
+flags:
+  e2d
+  mte: +.up_at
+```
+
+## Advanced: Periodic Rescans
+
+Keep index current if other software modifies files:
+
+```yaml
+[global]
+  re-maxage: 3600  # rescan every hour
+  
+[/uploads]
+  /mnt/uploads
+  flags:
+    scan: 300      # this volume: every 5 minutes
+```
+
+<Warning>
+Rescans disable uploads temporarily. Delayed by `--db-act` (default 10s) during active uploads.
+</Warning>
+
+## Filesystem Guards
+
+Prevent indexing across filesystems:
+
+```yaml
+[/music]
+  /mnt/music
+  flags:
+    xdev   # don't cross filesystem boundaries
+    xvol   # don't follow symlinks outside volume
+```
+
+- `xdev`: Skip bind-mounts and separate filesystems
+- `xvol`: Skip symlinks outside volume top directory
+
+## Example: Music Library Search
+
+```yaml
+[global]
+  e2dsa                  # full file indexing
+  e2ts                   # tag indexing
+  mte: artist,title,album,.tn,.bpm,key
+  mth: .dur,fmt,genre    # hidden but searchable
+  hist: /fast/ssd/db     # fast database location
+  
+[/music]
+  /mnt/nas/music
+  accs:
+    r: *
+  flags:
+    dotsrch              # include dotfiles in search
+    scan: 3600           # hourly rescan
+    srch_excl: 'temp|\._' # exclude temp and macOS files
+```
+
+**Search examples:**
+```
+artist: demetori .bpm: 170-180
+title: *touhou* genre: *metal*
+.dur: 300- artist: *sound* -artist: *collaboration*
+```

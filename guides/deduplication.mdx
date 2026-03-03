@@ -1,0 +1,550 @@
+---
+title: 'File Deduplication'
+description: 'Save disk space with content-based deduplication using symlinks, hardlinks, or reflinks'
+---
+
+## Overview
+
+copyparty can detect duplicate files based on their content and avoid storing multiple copies. This saves significant disk space, especially when multiple users upload the same files.
+
+## How Deduplication Works
+
+When deduplication is enabled:
+
+1. **File Upload**: User uploads a file
+2. **Hash Calculation**: copyparty calculates the file's hash (checksum)
+3. **Duplicate Check**: Compares hash against indexed files
+4. **Link Creation**: If duplicate found, creates a link instead of copying
+
+The result: only one physical copy exists on disk, with multiple references to it.
+
+## Deduplication Methods
+
+copyparty supports three types of deduplication:
+
+| Method | Safety | Compatibility | OS Support |
+|--------|--------|---------------|------------|
+| **Symlinks** | Medium | Good | All |
+| **Hardlinks** | Medium | Excellent | All |
+| **Reflinks** | High | Good | Linux 5.3+, limited FS |
+
+### Symlinks (Default)
+
+**Symbolic links** point to the original file.
+
+✅ Advantages:
+- Each link can have its own timestamp
+- Clearly visible that it's not a regular file
+- Works on all systems
+
+⚠️ Disadvantages:
+- If you delete the original, symlinks break
+- Some software doesn't handle symlinks well
+- Renaming files requires copyparty to update links
+
+### Hardlinks
+
+**Hard links** are indistinguishable from regular files.
+
+✅ Advantages:
+- Compatible with all software
+- Deleting one copy doesn't affect others
+- Can be moved/renamed safely with any tool
+
+⚠️ Disadvantages:
+- All copies share the same timestamp
+- Editing one copy modifies all copies
+- Less obvious that deduplication is happening
+
+### Reflinks (Copy-on-Write)
+
+**Reflinks** use filesystem-level copy-on-write.
+
+✅ Advantages:
+- **Safest option**: editing one copy doesn't affect others
+- Each copy is fully independent
+- Automatic copy-on-write when modified
+- Most space-efficient
+
+⚠️ Disadvantages:
+- Requires Python 3.14+ and Linux kernel 5.3+
+- Limited filesystem support (btrfs, maybe XFS)
+- Not available on ZFS yet
+
+## Basic Deduplication Setup
+
+<Steps>
+
+### Enable file indexing
+
+Deduplication requires the file database:
+
+```bash
+python copyparty-sfx.py -e2dsa --dedup \
+  -v /mnt/uploads:/uploads:w
+```
+
+- `-e2dsa` - Scan and index all files
+- `--dedup` - Enable symlink-based deduplication
+
+### Using configuration file
+
+```yaml dedup.conf
+[global]
+  e2dsa    # scan and index all files
+  dedup    # enable deduplication
+
+[/uploads]
+  /mnt/uploads
+  accs:
+    w: *
+    r: admin
+```
+
+### Verify deduplication
+
+After uploading duplicate files:
+
+```bash
+# Check for symlinks
+ls -la /mnt/uploads/
+
+# Count physical vs logical size
+du -sh /mnt/uploads/        # physical size
+du -sh --apparent-size /mnt/uploads/  # logical size
+```
+
+</Steps>
+
+## Choosing Deduplication Method
+
+<Tabs>
+  <Tab title="Symlinks (Default)">
+    Best for most use cases:
+
+    ```bash
+    python copyparty-sfx.py -e2dsa --dedup \
+      -v /mnt/uploads:/uploads:w
+    ```
+
+    Or in config:
+    ```yaml
+    [global]
+      e2dsa
+      dedup
+    ```
+  </Tab>
+
+  <Tab title="Hardlinks">
+    Better compatibility with other software:
+
+    ```bash
+    python copyparty-sfx.py -e2dsa --dedup --hardlink-only \
+      -v /mnt/uploads:/uploads:w
+    ```
+
+    Or in config:
+    ```yaml
+    [global]
+      e2dsa
+      dedup
+      hardlink-only
+    ```
+  </Tab>
+
+  <Tab title="Reflinks">
+    Safest option (requires compatible system):
+
+    ```bash
+    python copyparty-sfx.py -e2dsa --dedup --reflink \
+      -v /mnt/uploads:/uploads:w
+    ```
+
+    Or in config:
+    ```yaml
+    [global]
+      e2dsa
+      dedup
+      reflink
+    ```
+  </Tab>
+</Tabs>
+
+## Per-Volume Deduplication
+
+Enable deduplication for specific volumes only:
+
+```yaml
+[global]
+  e2dsa    # global indexing
+
+[/uploads]
+  /mnt/uploads
+  accs:
+    w: *
+  flags:
+    dedup           # enable for this volume
+    hardlinkonly    # use hardlinks instead of symlinks
+
+[/media]
+  /mnt/media
+  accs:
+    r: *
+  # no dedup flag = no deduplication
+```
+
+## Cross-Volume Deduplication
+
+Deduplicate files across different volumes:
+
+```bash
+python copyparty-sfx.py -e2dsa --dedup --xlink \
+  -v /mnt/uploads1:/up1:w \
+  -v /mnt/uploads2:/up2:w
+```
+
+- `--xlink` - Enable cross-volume linking
+
+⚠️ **Warning**: Cross-volume deduplication is experimental and may have bugs.
+
+## Deduplication Statistics
+
+View disk space saved:
+
+```bash
+python copyparty-sfx.py --stats -e2dsa --dedup \
+  -a admin:password \
+  -v /mnt/uploads:/uploads:A,admin
+```
+
+Access metrics at:
+```
+http://your-server:3923/.cpr/metrics
+```
+
+Metrics include:
+- `cpp_dupe_bytes` - Disk space saved
+- `cpp_dupe_files` - Number of duplicate files
+- `cpp_vol_bytes` - Total volume size
+- `cpp_vol_files` - Total file count
+
+## Advanced Configuration
+
+### Safe Deduplication Mode
+
+If you have other software modifying files, use this:
+
+```bash
+python copyparty-sfx.py -e2dsa --dedup --safe-dedup=1 \
+  -v /mnt/uploads:/uploads:w
+```
+
+- `--safe-dedup=1` - Verify file integrity before deduplicating
+
+This is slower but prevents deduplication of modified files.
+
+### Disable Clone Detection
+
+If using S3 or similar storage where reading is expensive:
+
+```yaml
+[/uploads]
+  /mnt/uploads
+  accs:
+    w: *
+  flags:
+    noclone    # disable duplicate detection entirely
+```
+
+### Database Location
+
+Move the deduplication database to faster storage:
+
+```yaml
+[global]
+  e2dsa
+  dedup
+  hist: /mnt/ssd/copyparty-db  # put database on SSD
+
+[/uploads]
+  /mnt/hdd/uploads  # data stays on HDD
+  accs:
+    w: *
+```
+
+### Skip Hashing for Large Files
+
+Exclude large files from deduplication:
+
+```yaml
+[/videos]
+  /mnt/videos
+  accs:
+    w: *
+  flags:
+    e2dsa
+    dedup
+    nohash: \.(mkv|mp4|avi)$  # don't hash video files
+```
+
+- Saves indexing time
+- Disables deduplication for matched files
+- Files are still indexed by path/size/date
+
+## Deduplication with Uploads
+
+### Reject Duplicate Uploads
+
+Prevent users from uploading duplicates:
+
+```yaml
+[/uploads]
+  /mnt/uploads
+  accs:
+    w: *
+  flags:
+    e2dsa
+    # no dedup flag = reject duplicate uploads
+```
+
+Without `dedup`, upload fails if file already exists.
+
+### Allow Duplicates with Links
+
+```yaml
+[/uploads]
+  /mnt/uploads
+  accs:
+    w: *
+  flags:
+    e2dsa
+    dedup    # create link instead of rejecting
+```
+
+Upload succeeds but creates a link instead of a new copy.
+
+### Randomize Duplicate Filenames
+
+Combine with filename randomization:
+
+```bash
+python copyparty-sfx.py -e2dsa --dedup \
+  -v /mnt/uploads:/uploads:wG:c,fk=8
+```
+
+Uploaders get unique filenames even for duplicate content.
+
+## Filesystem Compatibility
+
+### Symlinks and Hardlinks
+
+Supported on all major filesystems:
+- ext4, ext3, ext2 ✅
+- Btrfs ✅
+- XFS ✅
+- ZFS ✅
+- NTFS ✅
+- exFAT ⚠️ (symlinks may not work)
+- FAT32 ❌ (no symlinks or hardlinks)
+
+### Reflinks
+
+Only works on:
+- Btrfs ✅ (fully supported)
+- XFS ⚠️ (maybe, needs testing)
+- ZFS ❌ (not yet, known bugs)
+- ext4/NTFS/others ❌
+
+## Example: Complete Deduplication Setup
+
+```yaml complete-dedup.conf
+[global]
+  e2dsa              # scan all files on startup
+  dedup              # enable deduplication
+  hardlink-only      # use hardlinks instead of symlinks
+  hist: /mnt/ssd/cpp # database on SSD for performance
+  stats              # enable prometheus metrics
+
+[accounts]
+  uploader: pass1
+  admin: admin-secret
+
+[/uploads]
+  /mnt/hdd/uploads
+  accs:
+    w: uploader
+    A: admin
+  flags:
+    fk: 8              # filekeys for duplicate links
+    sz: 1k-1g          # limit file sizes
+    vmaxb: 500g        # max 500GB total
+    maxn: 100,3600     # rate limit uploads
+
+[/videos]
+  /mnt/hdd/videos
+  accs:
+    w: uploader  
+    r: admin
+  flags:
+    dedup
+    nohash: \.(mkv|mp4|avi)$  # skip hashing large videos
+```
+
+## Monitoring Deduplication
+
+### Check Symlink Destinations
+
+```bash
+# Find all symlinks
+find /mnt/uploads -type l
+
+# Show symlink targets
+find /mnt/uploads -type l -ls
+
+# Find broken symlinks
+find /mnt/uploads -type l ! -exec test -e {} \; -print
+```
+
+### Calculate Space Savings
+
+```bash
+# Physical disk usage
+du -sh /mnt/uploads
+
+# Logical size (if all files were real)
+du -sh --apparent-size /mnt/uploads
+
+# Difference = space saved
+```
+
+### Use Prometheus Metrics
+
+Enable metrics and monitor:
+
+```yaml
+[global]
+  e2dsa
+  dedup
+  stats
+
+[accounts]
+  monitoring: metrics-secret
+
+[/]
+  /mnt/uploads
+  accs:
+    w: *
+    a: monitoring  # admin access for metrics
+```
+
+Query metrics:
+```bash
+curl -u :metrics-secret http://your-server:3923/.cpr/metrics
+```
+
+Look for:
+- `cpp_dupe_bytes{vol="/"}` - Space saved
+- `cpp_dupe_files{vol="/"}` - Duplicate count
+
+## Important Warnings
+
+<Warning>
+  **Do not edit deduplicated files in-place!**
+  
+  With symlinks or hardlinks, editing one file edits ALL copies.
+  
+  Safe editing methods:
+  - Delete and re-upload
+  - Copy the file first, then edit the copy
+  - Use an editor that creates a new file (like vim's "backup" mode)
+</Warning>
+
+<Warning>
+  **Database corruption = broken symlinks**
+  
+  If the `.hist/up2k.db` database becomes corrupted or deleted:
+  - Symlinks may point to wrong files
+  - Some files may become inaccessible
+  
+  Prevention:
+  - Regular database backups
+  - Use `--hist` to store DB on reliable storage
+  - Consider reflinks if your filesystem supports them
+</Warning>
+
+<Warning>
+  **Cross-volume deduplication is experimental**
+  
+  The `--xlink` option may have bugs. Use at your own risk:
+  - Test thoroughly before production use
+  - Keep backups
+  - Monitor for broken links
+</Warning>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Deduplication not working">
+    Check these requirements:
+
+    1. Indexing enabled: `-e2dsa` or `-e2d`
+    2. Dedup flag set: `--dedup` or volflag `dedup`
+    3. Database exists: `.hist/up2k.db` in volume
+    4. Files are actually identical (same hash)
+
+    Verify with:
+    ```bash
+    python copyparty-sfx.py -e2dsa --dedup -v /test::w
+    # Upload same file twice and check with ls -la
+    ```
+  </Accordion>
+
+  <Accordion title="Broken symlinks after moving files">
+    Symlinks break if you move/rename the original file outside of copyparty.
+
+    Solutions:
+    1. Use hardlinks instead: `--hardlink-only`
+    2. Only move files through copyparty's web UI
+    3. Rebuild the database: restart with `-e2dsa`
+  </Accordion>
+
+  <Accordion title="Hardlinks editing all copies">
+    This is how hardlinks work. All hardlinks point to the same data.
+
+    Solutions:
+    1. Delete before editing (removes the hardlink)
+    2. Copy the file first, then edit the copy
+    3. Use reflinks if possible: `--reflink`
+  </Accordion>
+
+  <Accordion title="Reflinks not working">
+    Reflinks require:
+    - Python 3.14 or newer
+    - Linux kernel 5.3 or newer
+    - Btrfs filesystem (XFS maybe)
+
+    Check your setup:
+    ```bash
+    python3 --version  # needs 3.14+
+    uname -r           # needs 5.3+
+    df -T /mnt/uploads # needs btrfs
+    ```
+  </Accordion>
+
+  <Accordion title="Database growing too large">
+    The `up2k.db` database can grow large with many files.
+
+    Solutions:
+    1. Move to SSD: `--hist /mnt/ssd/cpp`
+    2. Exclude large files: `nohash: \.(mkv|iso)$`
+    3. Compress: use XZ filesystem compression
+    4. Clean old entries (no built-in tool yet)
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+- Set up [write-only folders](/guides/write-only-folders) for uploads
+- Configure [file sharing](/guides/file-sharing) with deduplication
+- Learn about [media server](/guides/media-server) with space-efficient storage
+- Set up [authentication](/guides/authentication) to track uploaders
