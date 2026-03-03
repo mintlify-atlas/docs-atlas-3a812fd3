@@ -1,0 +1,120 @@
+{
+  "projectType": "saas",
+  "projectName": "copyparty",
+  "projectDescription": "Portable file server with accelerated resumable uploads, deduplication, WebDAV, SFTP, FTP, TFTP, zeroconf, media indexer, thumbnails, and write-only folders",
+  "theme": "aspen",
+  "primaryColor": "#2563eb",
+  "lightColor": "#60a5fa",
+  "darkColor": "#1e40af",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/uploads",
+              "features/protocols",
+              "features/media",
+              "features/search",
+              "features/thumbnails"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "config/accounts-and-volumes",
+              "config/server-setup",
+              "config/permissions",
+              "config/volflags",
+              "config/event-hooks"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/systemd",
+              "deployment/docker",
+              "deployment/reverse-proxy",
+              "deployment/security"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/file-sharing",
+              "guides/media-server",
+              "guides/write-only-folders",
+              "guides/deduplication",
+              "guides/authentication"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "HTTP API",
+            "pages": [
+              "api/overview",
+              "api/upload",
+              "api/download",
+              "api/search",
+              "api/authentication"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI Reference",
+        "groups": [
+          {
+            "group": "Commands",
+            "pages": [
+              "cli/copyparty",
+              "cli/u2c",
+              "cli/partyfuse",
+              "cli/options"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Resumable uploads with up2k protocol",
+    "Multi-protocol file server (HTTP, WebDAV, FTP, SFTP, TFTP, SMB)",
+    "Media indexing and thumbnail generation",
+    "Audio/video player with transcoding",
+    "Content-based deduplication",
+    "Advanced permissions and user accounts",
+    "Write-only folders for anonymous uploads",
+    "Search by metadata and tags",
+    "Cross-platform support (Windows, Linux, macOS, Android, iOS)"
+  ],
+  "publicApiSurface": [
+    "HTTP API - File upload/download",
+    "HTTP API - Directory listing",
+    "HTTP API - Search and indexing",
+    "HTTP API - Authentication",
+    "WebDAV protocol",
+    "FTP/FTPS protocol",
+    "SFTP protocol",
+    "TFTP protocol",
+    "SMB/CIFS protocol",
+    "CLI: copyparty (main server)",
+    "CLI: u2c.py (upload client)",
+    "CLI: partyfuse.py (FUSE mount)",
+    "CLI: dbtool.py (database management)"
+  ]
+}
